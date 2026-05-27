@@ -284,7 +284,50 @@
 
 ### 4.1 Diagrama de bloques — Nivel 3
 
-<!-- Inserta la imagen: docs/img/uart_nivel3.png -->
+![Diagrama de nivel 3 del periférico UART](docs/img/uart_n3.png)
+
+**Figura 4.1.** Diagrama de nivel 3 del periférico UART 115200-8N1.
+
+El periférico UART se descompone en tres bloques principales: la interfaz de bus `uart_bus_if`, el banco de registros mapeados en memoria y el núcleo UART 115200-8N1. Esta división permite separar la comunicación con el bus del sistema, el almacenamiento de datos/control visible por software y la lógica serial encargada de transmitir y recibir tramas UART.
+
+El módulo `uart_bus_if` recibe los accesos provenientes del bus de interconexión de Dylan mediante las señales `addr[31:0]`, `wdata[31:0]`, `we`, `re` y `cs_uart`. A partir de estas señales, genera operaciones internas de lectura y escritura sobre los registros UART. Cuando el procesador lee el periférico, la interfaz responde hacia el bus mediante `uart_rdata[31:0]` y `uart_ready`.
+
+Los registros mapeados en memoria del UART son `CTRL/STATUS`, `TXDATA` y `RXDATA`. El registro `CTRL/STATUS`, ubicado en `0x0001_0040`, concentra señales de habilitación, control y estado del periférico. El registro `TXDATA`, ubicado en `0x0001_0044`, almacena el byte que será transmitido por el bloque `UART TX`. El registro `RXDATA`, ubicado en `0x0001_0048`, almacena el byte recibido por el bloque `UART RX`.
+
+El núcleo UART implementa la comunicación serial con configuración 115200-8N1, es decir, 115200 baudios, 8 bits de datos, sin paridad y 1 bit de parada. Internamente se divide en tres submódulos: `UART RX`, `Baud generator` y `UART TX`. El `Baud generator` deriva los pulsos de temporización a partir del reloj de 50 MHz, usando aproximadamente 434 ciclos por bit para la tasa de 115200 baudios. El bloque `UART RX` recibe la señal externa `uart_rx_i`, detecta la trama serial y entrega `rx_data[7:0]`, `rx_ready` y `rx_error`. El bloque `UART TX` toma `tx_data[7:0]` y `tx_start`, genera la trama serial correspondiente y entrega la salida externa `uart_tx_o`.
+
+La conexión entre registros y núcleo UART permite que el software controle la transmisión, consulte el estado del periférico y lea los datos recibidos. En particular, `CTRL/STATUS` recibe los estados `rx_ready`, `rx_error`, `tx_busy` y `tx_ready`; `TXDATA` alimenta al transmisor mediante `tx_data[7:0]` y `tx_start`; y `RXDATA` recibe el byte entregado por el receptor. Con esta organización, el UART queda integrado como periférico mapeado en memoria y mantiene una interfaz coherente con el bus del sistema.
+
+**Submódulos representados en el nivel 3:**
+
+| Bloque | Función |
+|--------|---------|
+| `uart_bus_if` | Traduce accesos del bus del sistema en operaciones de lectura/escritura sobre los registros UART. |
+| `CTRL/STATUS` | Registro de control y estado del periférico UART. Permite habilitar TX/RX, limpiar banderas y consultar estados. |
+| `TXDATA` | Registro que almacena el byte que será transmitido por el UART. |
+| `RXDATA` | Registro que almacena el byte recibido por el UART. |
+| `Baud generator` | Genera los pulsos de temporización `baud_tick` y `sample_tick` para TX y RX. |
+| `UART TX` | Construye y transmite la trama serial UART: start, 8 bits de datos y stop. |
+| `UART RX` | Recibe la trama serial UART, reconstruye el byte recibido y genera señales de estado/error. |
+
+**Conexiones principales del nivel 3:**
+
+| Origen | Destino | Señales |
+|--------|---------|---------|
+| Bus e interconexión | `uart_bus_if` | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_uart` |
+| `uart_bus_if` | Bus e interconexión | `uart_rdata[31:0]`, `uart_ready` |
+| `uart_bus_if` | `CTRL/STATUS` | `wr_ctrl`, `rd_status` |
+| `uart_bus_if` | `TXDATA` | `wr_tx_data[7:0]` |
+| `RXDATA` | `uart_bus_if` | `rd_rx_data[7:0]` |
+| `CTRL/STATUS` | Núcleo UART | `tx_enable`, `rx_enable`, `clear_flags` |
+| `TXDATA` | `UART TX` | `tx_data[7:0]`, `tx_start` |
+| `UART RX` | `RXDATA` | `rx_data[7:0]` |
+| `UART RX` | `CTRL/STATUS` | `rx_ready`, `rx_error` |
+| `UART TX` | `CTRL/STATUS` | `tx_busy`, `tx_ready` |
+| `Baud generator` | `UART TX` | `baud_tick` |
+| `Baud generator` | `UART RX` | `sample_tick` |
+| `uart_rx_i` | `UART RX` | `serial RX` |
+| `UART TX` | `uart_tx_o` | `serial TX` |
 
 ### 4.2 FSM del UART
 
