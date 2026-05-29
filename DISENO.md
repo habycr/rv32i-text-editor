@@ -385,7 +385,65 @@ La conexión entre registros y núcleo UART permite que el software controle la 
 
 ### 5.1 Diagrama de bloques — Nivel 3
 
-<!-- Inserta la imagen: docs/img/ps2_nivel3.png -->
+![Diagrama de nivel 3 del periférico PS/2](docs/img/ps2_n3.png)
+
+**Figura 5.1.** Diagrama de nivel 3 del periférico PS/2.
+
+El periférico PS/2 se descompone en una interfaz de bus `ps2_bus_if`, un banco de registros mapeados en memoria y un núcleo PS/2 encargado de la recepción de scancodes y la transmisión de comandos hacia el teclado. Esta división mantiene separada la comunicación con el bus del sistema, el almacenamiento visible por software y la lógica propia del protocolo PS/2.
+
+El módulo `ps2_bus_if` recibe los accesos provenientes del bus de interconexión mediante las señales `addr[31:0]`, `wdata[31:0]`, `we`, `re` y `cs_ps2`. A partir de estas señales, genera operaciones internas de lectura y escritura sobre los registros del periférico. Cuando el procesador lee el periférico, la interfaz responde hacia el bus mediante `ps2_rdata[31:0]` y `ps2_ready`.
+
+Los registros mapeados en memoria del PS/2 son `CTRL/STATUS`, `RXDATA` y `TXDATA`. El registro `CTRL/STATUS`, ubicado en `0x0001_0050`, concentra las señales de control y estado del periférico, incluyendo `rx_ready`, `tx_ready`, `rx_error`, `tx_error` y `kbd_enable`. El registro `RXDATA`, ubicado en `0x0001_0054`, almacena el scancode recibido desde el teclado. El registro `TXDATA`, ubicado en `0x0001_0058`, almacena el comando que será enviado hacia el teclado mediante el transmisor PS/2.
+
+El núcleo PS/2 recibe las señales externas `ps2_clk_i` y `ps2_data_i`. La entrada de reloj y datos pasa primero por un sincronizador y detector de flanco, el cual genera señales internas sincronizadas y detecta el flanco descendente del reloj PS/2. La FSM de recepción controla el proceso de captura de bits, avanzando por los estados `IDLE`, `SHIFT`, `CHECK`, `DONE` y `ERROR`. El receptor de trama captura la estructura de 11 bits del protocolo PS/2: bit de inicio, 8 bits de datos LSB-first, bit de paridad y bit de parada.
+
+Después de recibir la trama, el verificador de paridad y stop valida la paridad impar y el bit de parada. Si la trama es válida, el byte recibido se entrega al bloque de manejo de prefijos. Este bloque identifica los prefijos `0xF0`, usado para códigos de liberación de tecla, y `0xE0`, usado para teclas extendidas. Las señales internas `is_break` e `is_extended` se utilizan dentro del núcleo para que el decodificador de scancodes interprete correctamente el byte recibido; no se exponen como bits visibles del registro `CTRL/STATUS`.
+
+El decodificador de scancodes Set 2 convierte el byte recibido y sus prefijos asociados en un scancode disponible para el sistema. Cuando existe un dato válido, se genera `rx_ready` hacia `CTRL/STATUS` y se escribe `scancode[7:0]` hacia `RXDATA`. En caso de error de paridad o enmarcado, el verificador genera `rx_error` hacia `CTRL/STATUS`.
+
+El bloque de transmisión de comandos PS/2 permite enviar comandos desde el microcontrolador hacia el teclado. Este bloque toma `tx_data[7:0]` y `tx_start` desde `TXDATA`, genera la trama PS/2 correspondiente y controla las señales externas `ps2_clk_o` y `ps2_data_o` para transmisión. También reporta `tx_ready` y `tx_error` hacia `CTRL/STATUS`.
+
+**Submódulos representados en el nivel 3:**
+
+| Bloque                             | Función                                                                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ps2_bus_if`                       | Traduce accesos del bus del sistema en operaciones de lectura/escritura sobre los registros PS/2.                                                         |
+| `CTRL/STATUS`                      | Registro de control y estado del periférico. Contiene banderas como `rx_ready`, `tx_ready`, `rx_error`, `tx_error` y el bit de habilitación `kbd_enable`. |
+| `RXDATA`                           | Registro que almacena el scancode recibido desde el teclado.                                                                                              |
+| `TXDATA`                           | Registro que almacena el comando que se enviará hacia el teclado.                                                                                         |
+| Sincronizador y detector de flanco | Sincroniza `ps2_clk_i` y `ps2_data_i` al reloj del sistema y detecta el flanco descendente del reloj PS/2.                                                |
+| FSM de recepción                   | Controla el proceso de recepción de la trama PS/2 mediante los estados `IDLE`, `SHIFT`, `CHECK`, `DONE` y `ERROR`.                                        |
+| Receptor de trama de 11 bits       | Captura la trama PS/2 formada por start, 8 bits de datos, paridad y stop, en orden LSB-first.                                                             |
+| Verificador de paridad y stop      | Valida la paridad impar y el bit de parada de la trama recibida.                                                                                          |
+| Manejo de prefijos                 | Detecta los prefijos `0xF0` para break code y `0xE0` para teclas extendidas.                                                                              |
+| Decodificador de scancodes Set 2   | Interpreta el byte recibido y los prefijos internos para producir el scancode final.                                                                      |
+| Transmisor de comandos PS/2        | Envía comandos hacia el teclado y reporta estado de transmisión mediante `tx_ready` y `tx_error`.                                                         |
+
+**Conexiones principales del nivel 3:**
+
+| Origen                             | Destino                            | Señales                                           |
+| ---------------------------------- | ---------------------------------- | ------------------------------------------------- |
+| Bus e interconexión                | `ps2_bus_if`                       | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_ps2` |
+| `ps2_bus_if`                       | Bus e interconexión                | `ps2_rdata[31:0]`, `ps2_ready`                    |
+| `ps2_bus_if`                       | `CTRL/STATUS`                      | `wr_ctrl`, `rd_status`                            |
+| `ps2_bus_if`                       | `TXDATA`                           | `wr_tx_data[7:0]`                                 |
+| `RXDATA`                           | `ps2_bus_if`                       | `rd_rx_data[7:0]`                                 |
+| `CTRL/STATUS`                      | FSM de recepción                   | `kbd_enable`, `clear_flags`                       |
+| `ps2_clk_i`                        | Sincronizador y detector de flanco | `reloj PS/2`                                      |
+| `ps2_data_i`                       | Sincronizador y detector de flanco | `datos PS/2`                                      |
+| Sincronizador y detector de flanco | FSM de recepción                   | `fall_edge`, `ps2_data_sync`                      |
+| FSM de recepción                   | Receptor de trama de 11 bits       | `bit_shift`, `bit_count`                          |
+| Receptor de trama de 11 bits       | Verificador de paridad y stop      | `frame[10:0]`, `rx_byte[7:0]`                     |
+| Verificador de paridad y stop      | Manejo de prefijos                 | `frame_ok`, `parity_ok`                           |
+| Verificador de paridad y stop      | `CTRL/STATUS`                      | `rx_error`                                        |
+| Manejo de prefijos                 | Decodificador de scancodes Set 2   | `rx_byte[7:0]`, `is_break`, `is_extended`         |
+| Decodificador de scancodes Set 2   | `RXDATA`                           | `scancode[7:0]`                                   |
+| Decodificador de scancodes Set 2   | `CTRL/STATUS`                      | `rx_ready`                                        |
+| `TXDATA`                           | Transmisor de comandos PS/2        | `tx_data[7:0]`, `tx_start`                        |
+| Transmisor de comandos PS/2        | `CTRL/STATUS`                      | `tx_ready`, `tx_error`                            |
+| Transmisor de comandos PS/2        | `ps2_clk_o`                        | `ps2_clk_drive`                                   |
+| Transmisor de comandos PS/2        | `ps2_data_o`                       | `ps2_data_drive`                                  |
+
 
 ### 5.2 FSM del PS/2
 
