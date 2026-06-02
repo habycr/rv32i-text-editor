@@ -177,54 +177,163 @@
 
 <!-- Describe el flujo de señales para al menos 3 tipos de instrucción: tipo-R, load/store, branch -->
 
-### 3.3 FSM de la unidad de control
+## 3.3 Lógica combinacional de la unidad de control
 
-<!-- Inserta la imagen: docs/img/cpu_control_fsm.png -->
+El CPU implementado es **monociclo**: cada instrucción se completa en un único ciclo de reloj.
+En esta microarquitectura la unidad de control no requiere una FSM de estados porque no existe
+secuenciación temporal entre fases (fetch, decode, execute, memory, writeback). Todos los
+bloques del datapath operan en paralelo dentro del mismo ciclo, y la unidad de control es
+**enteramente combinacional**: dado el valor de `opcode[6:0]`, `funct3[2:0]` y `funct7[6:0]`,
+produce de forma instantánea y estática el vector de señales de control que dirige al datapath
+de ese ciclo.
 
-<!-- Describe los estados, condiciones de transición y señales de control emitidas en cada estado -->
+> **Nota de diagrama:** El diagrama de nivel 3 de la unidad de control se encuentra en
+> `docs/img/n2_control_unit_javier.png`. Si se requiere una versión actualizada alineada con
+> las señales de esta sección, deberá generarse como `docs/img/cpu_control_n3.png`.
 
-### 3.4 Tabla de señales de control por tipo de instrucción
+### Descomposición interna
 
-| Instrucción | Tipo | RegWrite | MemRead | MemWrite | Branch | ALUSrc | ALUOp |
-|-------------|------|----------|---------|----------|--------|--------|-------|
-| `add` | R | 1 | 0 | 0 | 0 | 0 | <!-- --> |
-| `addi` | I | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |
-| `lw` | I | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |
-| `sw` | S | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |
-| `beq` | B | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |
-| `jal` | J | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |
+La unidad de control se descompone en cinco bloques combinacionales tal como se muestra en el
+diagrama de Javier:
 
-### 3.5 Tabla de instrucciones RV32I implementadas
+| Bloque | Nombre RTL sugerido | Entradas | Salidas | Función |
+|--------|--------------------|---------|---------|---------| 
+| Decodificador de tipo | `type_decoder` | `opcode[6:0]` | tipo interno | Identifica el formato de instrucción (R, I, S, B, U, J) y activa la ruta de decodificación correspondiente en los demás bloques. |
+| Generador de señales de control | `ctrl_signals_gen` | `opcode[6:0]` | `RegWrite`, `ALUSrc`, `MemRead`, `MemWrite`, `ResultSrc[1:0]`, `Branch`, `Jump` | Produce las señales de control del datapath que no dependen de `funct3`/`funct7`. Se implementa como tabla de verdad sobre el opcode. |
+| Generador de ImmSrc | `imm_src_gen` | `opcode[6:0]` | `ImmSrc[2:0]` | Selecciona el esquema de extensión de inmediato según el tipo de instrucción (I, S, B, U, J). |
+| Generador de ALUControl | `alu_ctrl_gen` | `opcode[6:0]`, `funct3[2:0]`, `funct7[6:0]` | `ALUControl[3:0]` | Determina la operación de la ALU combinando el tipo de instrucción con los campos de función. Para tipos R e I-aritmético consulta `funct3` y `funct7`; para loads, stores y branches usa operación fija (suma o resta). |
+| Lógica de branch y PCNextSrc | `branch_pc_logic` | `Branch`, `Jump`, `alu_zero`, `alu_lt_signed`, `funct3[2:0]` | `PCNextSrc[1:0]` | Evalúa la condición de salto según el tipo de branch (`beq`, `bne`, `blt`, `bge`) usando `alu_zero` y `alu_lt_signed`, y combina con `Jump` para determinar la fuente del siguiente PC. |
 
-| Mnemónico | Tipo | opcode [6:0] | funct3 [2:0] | funct7 [6:0] | Descripción |
-|-----------|------|-------------|-------------|-------------|-------------|
-| `lw` | I | `0000011` | `010` | — | Carga palabra desde memoria |
-| `sw` | S | `0100011` | `010` | — | Almacena palabra en memoria |
-| `add` | R | `0110011` | `000` | `0000000` | Suma de registros |
-| `sub` | R | `0110011` | `000` | `0100000` | Resta de registros |
-| `and` | R | `0110011` | `111` | `0000000` | AND lógico |
-| `or` | R | `0110011` | `110` | `0000000` | OR lógico |
-| `xor` | R | `0110011` | `100` | `0000000` | XOR lógico |
-| `sll` | R | `0110011` | `001` | `0000000` | Desplazamiento lógico izquierda |
-| `srl` | R | `0110011` | `101` | `0000000` | Desplazamiento lógico derecha |
-| `sra` | R | `0110011` | `101` | `0100000` | Desplazamiento aritmético derecha |
-| `slt` | R | `0110011` | `010` | `0000000` | Set if less than (signed) |
-| `sltu` | R | `0110011` | `011` | `0000000` | Set if less than (unsigned) |
-| `addi` | I | `0010011` | `000` | — | Suma inmediato |
-| `andi` | I | `0010011` | `111` | — | AND con inmediato |
-| `ori` | I | `0010011` | `110` | — | OR con inmediato |
-| `xori` | I | `0010011` | `100` | — | XOR con inmediato |
-| `slli` | I | `0010011` | `001` | `0000000` | Desplazamiento lógico izq. inmediato |
-| `srli` | I | `0010011` | `101` | `0000000` | Desplazamiento lógico der. inmediato |
-| `srai` | I | `0010011` | `101` | `0100000` | Desplazamiento aritmético der. inmediato |
-| `slti` | I | `0010011` | `010` | — | Set if less than inmediato (signed) |
-| `sltui` | I | `0010011` | `011` | — | Set if less than inmediato (unsigned) |
-| `beq` | B | `1100011` | `000` | — | Branch if equal |
-| `bne` | B | `1100011` | `001` | — | Branch if not equal |
-| `blt` | B | `1100011` | `100` | — | Branch if less than |
-| `bge` | B | `1100011` | `101` | — | Branch if greater or equal |
-| `jal` | J | `1101111` | — | — | Jump and link |
-| `jalr` | I | `1100111` | `000` | — | Jump and link register |
+### Justificación de la descomposición combinacional
+
+Elegir lógica combinacional pura sobre una FSM multiciclo tiene las siguientes implicaciones
+para este diseño:
+
+- **CPI = 1 garantizado.** Cada instrucción ocupa exactamente un ciclo de reloj, lo que
+  simplifica el análisis de rendimiento del firmware en ensamblador.
+- **Sin registros de estado en la unidad de control.** La ausencia de estado secuencial
+  elimina los riesgos de condiciones de carrera entre señales de control y reduce los recursos
+  de flip-flops en la FPGA.
+- **Camino crítico determinado por la instrucción más lenta.** En monociclo, el período de
+  reloj debe acomodar la instrucción de mayor latencia (típicamente `lw`: PC → ROM →
+  decodificación → banco de registros → ALU → RAM → mux → banco de registros). Esto impone
+  una frecuencia máxima menor que en multiciclo, pero es aceptable para la velocidad requerida
+  por la aplicación de texto interactivo.
+- **Verificación independiente por bloque.** Cada uno de los cinco sub-bloques puede
+  verificarse con un testbench de tabla de verdad antes de integrarse.
+
+---
+
+### 3.4 Tabla de interfaz de la unidad de control
+
+#### Entradas
+
+| Puerto | Ancho | Fuente en el datapath | Función |
+|--------|-------|-----------------------|---------|
+| `opcode_i` | 7 bits | `instr[6:0]` | Campo opcode de la instrucción decodificada. Determina el tipo de instrucción. |
+| `funct3_i` | 3 bits | `instr[14:12]` | Campo funct3. Discrimina variantes dentro del mismo opcode (ej. `beq` vs `bne`, `add` vs `xor`). |
+| `funct7_i` | 7 bits | `instr[30]` efectivo | Campo funct7. Distingue principalmente `add`/`sub` y `srl`/`sra`. Solo el bit 5 (`funct7[5]`) es relevante en la mayoría de los casos. |
+| `alu_zero_i` | 1 bit | Salida flag `zero` de la ALU | Indica que el resultado de la ALU es cero. Usado para evaluar condición `beq`/`bne`. |
+| `alu_lt_signed_i` | 1 bit | Salida flag `lt` de la ALU | Indica que el operando A es menor que B (comparación con signo). Usado para evaluar condición `blt`/`bge`. |
+
+#### Salidas
+
+| Puerto | Ancho | Destino en el datapath | Función |
+|--------|-------|------------------------|---------|
+| `RegWrite_o` | 1 bit | Puerto `WE3` del banco de registros | Habilita escritura en el registro destino al final del ciclo. |
+| `ALUSrc_o` | 1 bit | MUX de operando B de la ALU | `0`: operando B proviene del banco de registros (`RD2`). `1`: operando B proviene del extensor de signo (inmediato). |
+| `ResultSrc_o` | 2 bits | MUX de dato a escribir en el banco de registros (`WD3`) | `00`: resultado de la ALU. `01`: dato leído de memoria RAM (`ReadData`). `10`: `PC + 4` (para `jal`/`jalr`). `11`: reservado. |
+| `MemRead_o` | 1 bit | Habilitación de lectura de la RAM de datos | Activo en instrucciones `lw`. Necesario si la RAM requiere señal de lectura explícita. |
+| `MemWrite_o` | 1 bit | Puerto `WE` de la RAM de datos | Habilita escritura en memoria. Activo únicamente en instrucciones `sw`. |
+| `Branch_o` | 1 bit | Lógica de `PCNextSrc` | Indica que la instrucción es un branch condicional. Se combina con el resultado de la condición para determinar si se toma el salto. |
+| `Jump_o` | 1 bit | Lógica de `PCNextSrc` | Indica que la instrucción es un salto incondicional (`jal` o `jalr`). |
+| `ALUControl_o` | 4 bits | Puerto de operación de la ALU | Selecciona la operación aritmética o lógica a ejecutar. Ver codificación en la tabla de instrucciones. |
+| `ImmSrc_o` | 3 bits | Bloque extensor de signo (`Extend`) | Selecciona el esquema de construcción del inmediato según el tipo de instrucción. Ver codificación abajo. |
+| `PCNextSrc_o` | 2 bits | MUX de selección del próximo PC | `00`: `PC + 4` (secuencial). `01`: `PCTarget` (branch tomado o `jal`). `10`: resultado de la ALU (para `jalr`). `11`: reservado. |
+
+#### Codificación de ImmSrc
+
+| `ImmSrc[2:0]` | Tipo | Campos usados | Descripción |
+|---------------|------|---------------|-------------|
+| `000` | I | `instr[31:20]` | Inmediato con signo de 12 bits (loads, `addi`, etc.) |
+| `001` | S | `instr[31:25]`, `instr[11:7]` | Inmediato de almacenamiento de 12 bits |
+| `010` | B | `instr[31]`, `instr[7]`, `instr[30:25]`, `instr[11:8]` | Inmediato de branch de 13 bits |
+| `011` | J | `instr[31]`, `instr[19:12]`, `instr[20]`, `instr[30:21]` | Inmediato de salto de 21 bits (`jal`) |
+| `100` | U | `instr[31:12]` | Inmediato de 20 bits en posición alta (`lui`, `auipc`) |
+
+#### Codificación de ALUControl
+
+| `ALUControl[3:0]` | Operación ALU | Instrucciones que la usan |
+|-------------------|---------------|--------------------------|
+| `0000` | ADD | `add`, `addi`, `lw`, `sw`, `jal`, `jalr`, branches (cálculo de dirección) |
+| `0001` | SUB | `sub`, `beq`, `bne`, `blt`, `bge` (evaluación de condición) |
+| `0010` | AND | `and`, `andi` |
+| `0011` | OR | `or`, `ori` |
+| `0100` | XOR | `xor`, `xori` |
+| `0101` | SLL | `sll`, `slli` |
+| `0110` | SRL | `srl`, `srli` |
+| `0111` | SRA | `sra`, `srai` |
+| `1000` | SLT | `slt`, `slti` |
+| `1001` | SLTU | `sltu`, `sltui` |
+
+---
+
+### 3.5 Tabla de señales de control por tipo de instrucción
+
+La tabla cubre todas las instrucciones del subconjunto RV32I requerido por el proyecto. Las
+columnas corresponden exactamente a las señales de salida de la unidad de control. Los valores
+de `ALUControl` y `ImmSrc` usan la codificación de las tablas anteriores.
+
+> **Convención:** `—` indica que el valor de la señal no afecta la operación y puede ser
+> cualquiera (don't care). `x` en `funct7` indica que solo el bit 5 es relevante para esa
+> instrucción.
+
+| Instrucción | Tipo | `RegWrite` | `ALUSrc` | `ResultSrc` | `MemRead` | `MemWrite` | `Branch` | `Jump` | `ALUControl` | `ImmSrc` | `PCNextSrc` |
+|-------------|------|:----------:|:--------:|:-----------:|:---------:|:----------:|:--------:|:------:|:------------:|:--------:|:-----------:|
+| `add` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0000` | `—` | `00` |
+| `sub` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0001` | `—` | `00` |
+| `and` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0010` | `—` | `00` |
+| `or` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0011` | `—` | `00` |
+| `xor` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0100` | `—` | `00` |
+| `sll` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0101` | `—` | `00` |
+| `srl` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0110` | `—` | `00` |
+| `sra` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0111` | `—` | `00` |
+| `slt` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1000` | `—` | `00` |
+| `sltu` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1001` | `—` | `00` |
+| `addi` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0000` | `000` | `00` |
+| `andi` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0010` | `000` | `00` |
+| `ori` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0011` | `000` | `00` |
+| `xori` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0100` | `000` | `00` |
+| `slli` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0101` | `000` | `00` |
+| `srli` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0110` | `000` | `00` |
+| `srai` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0111` | `000` | `00` |
+| `slti` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `1000` | `000` | `00` |
+| `sltui` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `1001` | `000` | `00` |
+| `lw` | I | 1 | 1 | `01` | 1 | 0 | 0 | 0 | `0000` | `000` | `00` |
+| `sw` | S | 0 | 1 | `—` | 0 | 1 | 0 | 0 | `0000` | `001` | `00` |
+| `beq` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
+| `bne` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
+| `blt` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
+| `bge` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
+| `jal` | J | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `011` | `01` |
+| `jalr` | I | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `000` | `10` |
+
+> ¹ **PCNextSrc para branches:** La señal `PCNextSrc` para instrucciones de tipo B no sale
+> directamente de la tabla de verdad del opcode; la determina la lógica `branch_pc_logic`
+> en función de `Branch = 1`, `funct3[2:0]`, `alu_zero` y `alu_lt_signed`:
+>
+> | Instrucción | Condición de salto tomado |
+> |-------------|--------------------------|
+> | `beq` | `alu_zero = 1` |
+> | `bne` | `alu_zero = 0` |
+> | `blt` | `alu_lt_signed = 1` |
+> | `bge` | `alu_lt_signed = 0` |
+>
+> Si la condición se cumple: `PCNextSrc = 01` (PCTarget). Si no se cumple: `PCNextSrc = 00`
+> (PC + 4). Este es el único punto donde las salidas de la ALU retroalimentan a la unidad de
+> control dentro del mismo ciclo.
+
+---
 
 ### 3.6 Nivel 4 — Fichas de módulos del CPU
 
@@ -260,13 +369,64 @@
 
 #### 3.6.4 Unidad de Control
 
-**Nombre:** `control_unit`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+**Nombre:** `control_unit`
+
+**Objetivo:** Generar el vector completo de señales de control del datapath a partir de los
+campos de la instrucción en curso (`opcode`, `funct3`, `funct7`) y de los flags de resultado
+de la ALU (`alu_zero`, `alu_lt_signed`), de forma puramente combinacional y en un único ciclo
+de reloj.
+
+**Entradas:**
+
+| Puerto | Ancho | Función |
+|--------|-------|---------|
+| `opcode_i` | 7 bits | Campo `instr[6:0]`; determina el tipo de instrucción |
+| `funct3_i` | 3 bits | Campo `instr[14:12]`; discrimina variantes dentro del opcode |
+| `funct7_i` | 7 bits | Campo `instr[31:25]`; bit 5 distingue `add`/`sub` y `srl`/`sra` |
+| `alu_zero_i` | 1 bit | Flag `zero` de la ALU; usado para evaluar `beq` y `bne` |
+| `alu_lt_signed_i` | 1 bit | Flag `lt` de la ALU; usado para evaluar `blt` y `bge` |
+
+**Salidas:**
+
+| Puerto | Ancho | Función |
+|--------|-------|---------|
+| `RegWrite_o` | 1 bit | Habilita escritura en el banco de registros |
+| `ALUSrc_o` | 1 bit | Selecciona el segundo operando de la ALU (registro vs. inmediato) |
+| `ResultSrc_o` | 2 bits | Selecciona el dato a escribir en el banco de registros |
+| `MemRead_o` | 1 bit | Habilita lectura de la RAM de datos |
+| `MemWrite_o` | 1 bit | Habilita escritura en la RAM de datos |
+| `Branch_o` | 1 bit | Indica instrucción de branch condicional |
+| `Jump_o` | 1 bit | Indica salto incondicional (`jal`, `jalr`) |
+| `ALUControl_o` | 4 bits | Operación a ejecutar en la ALU |
+| `ImmSrc_o` | 3 bits | Esquema de construcción del inmediato en el extensor de signo |
+| `PCNextSrc_o` | 2 bits | Fuente del próximo valor del PC |
+
+**Relación con otros módulos:**
+
+- Recibe `opcode`, `funct3` y `funct7` directamente de la instrucción en curso (desde la
+  memoria ROM a través del datapath de José).
+- Recibe `alu_zero` y `alu_lt_signed` desde la salida de flags de la ALU.
+- Sus salidas se conectan a todos los MUXes, puertos de habilitación y entradas de operación
+  del datapath: banco de registros, ALU, extensor de signo, RAM de datos y lógica de PC.
+
+**Funcionamiento:** Al inicio de cada ciclo, en cuanto la instrucción está disponible en la
+salida de la ROM, los cinco bloques combinacionales internos propagan sus salidas sin esperar
+ningún flanco de reloj. El bloque `ctrl_signals_gen` e `imm_src_gen` dependen solo de
+`opcode`; el bloque `alu_ctrl_gen` combina `opcode`, `funct3` y el bit 5 de `funct7`; el
+bloque `branch_pc_logic` evalúa la condición de salto usando los flags de la ALU una vez que
+esta termina de calcular (dentro del mismo ciclo). No existe ningún registro interno en la
+unidad de control.
+
+**Justificación de diseño:** La implementación combinacional es la opción natural para un CPU
+monociclo y está directamente alineada con la arquitectura seleccionada en la sección 11.1
+(alternativa uniciclo). Permite implementar la tabla de verdad completa de señales de control
+mediante sentencias `case` sobre `opcode` en SystemVerilog, lo que resulta en síntesis
+eficiente sobre la FPGA Cyclone V y facilita la verificación exhaustiva con un testbench de
+tabla de verdad.
+
+> **Diagrama pendiente:** El diagrama `docs/img/cpu_control_n3.png` que muestre los cinco
+> sub-bloques internos, sus interconexiones internas y la conexión completa con el datapath
+> de José debe generarse antes de la entrega final del DISENO.md. Ver nota en sección 3.3.
 
 #### 3.6.5 Extensión de Signo
 
