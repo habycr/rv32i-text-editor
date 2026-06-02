@@ -529,105 +529,119 @@ El núcleo UART implementa la comunicación serial con configuración 115200-8N1
 
 ---
 
+
+
 ### 4.4 Nivel 4 — Fichas de módulos del UART
 
 El periférico UART se descompone en una interfaz de bus, tres registros mapeados en memoria y un núcleo serial 115200-8N1 compuesto por generador de baud rate, transmisor y receptor.
 
 #### 4.4.1 Interfaz de bus UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_bus_if` |
-| Nivel | 4 |
-| Responsabilidad | Traducir accesos del bus hacia operaciones de lectura/escritura sobre los registros UART. |
-| Entradas principales | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_uart`, `status[31:0]`, `rx_data[7:0]` |
-| Salidas principales | `uart_rdata[31:0]`, `uart_ready`, `wr_ctrl`, `rd_status`, `wr_tx_data[7:0]`, `rd_rx_data` |
-| Dependencias | Bus e interconexión, `CTRL/STATUS`, `TXDATA`, `RXDATA`. |
-| Observaciones | Decodifica las direcciones `0x0001_0040`, `0x0001_0044` y `0x0001_0048`. |
+| Campo                | Descripción                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Nombre lógico        | `uart_bus_if`                                                                             |
+| Nivel                | 4                                                                                         |
+| Responsabilidad      | Traducir accesos del bus hacia operaciones de lectura/escritura sobre los registros UART. |
+| Entradas principales | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_uart`, `status[31:0]`, `rx_data[7:0]`        |
+| Salidas principales  | `uart_rdata[31:0]`, `uart_ready`, `wr_ctrl`, `rd_status`, `wr_tx_data[7:0]`, `rd_rx_data` |
+| Dependencias         | Bus e interconexión, `CTRL/STATUS`, `TXDATA`, `RXDATA`.                                   |
+| Observaciones        | Decodifica las direcciones `0x0001_0040`, `0x0001_0044` y `0x0001_0048`.                  |
+
+| Dirección     | Registro seleccionado | Operación                                    |
+| ------------- | --------------------- | -------------------------------------------- |
+| `0x0001_0040` | `CTRL/STATUS`         | Lectura de estado / escritura de control. |
+| `0x0001_0044` | `TXDATA`              | Escritura del byte a transmitir.             |
+| `0x0001_0048` | `RXDATA`              | Lectura del byte recibido.                   |
 
 #### 4.4.2 Registro CTRL/STATUS del UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_ctrl_status` |
-| Nivel | 4 |
-| Dirección | `0x0001_0040` |
-| Responsabilidad | Concentrar señales de control y estado visibles por software. |
-| Entradas principales | `wr_ctrl`, `wdata[31:0]`, `rx_ready`, `rx_error`, `tx_busy`, `tx_ready`, `rd_rx_data` |
-| Salidas principales | `status[31:0]`, `tx_enable`, `rx_enable`, `clear_flags` |
-| Dependencias | `uart_bus_if`, `uart_rx`, `uart_tx`. |
-| Observaciones | Permite consultar estado de transmisión/recepción y controlar la habilitación del núcleo UART. |
+| Campo                | Descripción                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Nombre lógico        | `uart_ctrl_status`                                                                                        |
+| Nivel                | 4                                                                                                         |
+| Dirección            | `0x0001_0040`                                                                                             |
+| Responsabilidad      | Exponer el estado básico del UART y almacenar señales de control del periférico.                          |
+| Entradas principales | `wr_ctrl`, `wdata[31:0]`, `rx_ready`, `rx_error`, `tx_busy`, `tx_ready`, `rd_rx_data`.                    |
+| Salidas principales  | `status[31:0]`, `tx_enable`, `rx_enable`, `clear_flags`.                                                  |
+| Dependencias         | `uart_bus_if`, `uart_rx`, `uart_tx`.                                                                      |
+| Observaciones        | Los bits no definidos se mantienen reservados y se leen como 0. La lectura de `RXDATA` limpia `rx_ready`. |
 
-| Bit / señal | Tipo | Descripción |
-|-------------|------|-------------|
-| `tx_ready` | RO | Transmisor disponible. |
-| `rx_ready` | RO | Byte recibido disponible. |
-| `rx_error` | RO | Error de recepción. |
-| `tx_enable` | R/W | Habilita transmisión. |
-| `rx_enable` | R/W | Habilita recepción. |
-| `clear_flags` | W | Limpia banderas de estado/error. |
+| Señal | Tipo | Descripción |
+|-------|------|-------------|
+| `tx_ready` | RO | El transmisor está libre para aceptar un nuevo byte. |
+| `tx_busy` | RO | Hay una transmisión en curso. |
+| `rx_ready` | RO | Hay un byte disponible en `RXDATA`. |
+| `rx_error` | RO | Error de recepción UART. |
+| `tx_enable` | R/W | Habilita el transmisor UART. |
+| `rx_enable` | R/W | Habilita el receptor UART. |
+| `clear_flags` | WO | Limpia banderas de estado/error. |
 
 #### 4.4.3 Registro TXDATA del UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_txdata` |
-| Nivel | 4 |
-| Dirección | `0x0001_0044` |
-| Responsabilidad | Almacenar el byte que será transmitido. |
-| Entradas principales | `wr_tx_data[7:0]`, pulso de escritura desde `uart_bus_if`. |
-| Salidas principales | `tx_data[7:0]`, `tx_start`. |
-| Dependencias | `uart_bus_if`, `uart_tx`. |
-| Observaciones | La escritura genera un pulso `tx_start` hacia el transmisor. |
+| Campo                | Descripción                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| Nombre lógico        | `uart_txdata`                                                                         |
+| Nivel                | 4                                                                                     |
+| Dirección            | `0x0001_0044`                                                                         |
+| Responsabilidad      | Almacenar el byte que será transmitido por el UART.                                   |
+| Entradas principales | `wr_tx_data[7:0]`, pulso de escritura desde `uart_bus_if`.                            |
+| Salidas principales  | `tx_data[7:0]`, `tx_start` hacia `uart_tx`. |                    
+| Dependencias         | `uart_bus_if`, `uart_tx`.                                                             |
+| Observaciones        | La escritura en este registro carga `tx_data[7:0]` y genera el pulso interno `tx_start` hacia `uart_tx`. |
 
 #### 4.4.4 Registro RXDATA del UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_rxdata` |
-| Nivel | 4 |
-| Dirección | `0x0001_0048` |
-| Responsabilidad | Almacenar el byte recibido. |
-| Entradas principales | `rx_data[7:0]`, `rx_ready`. |
-| Salidas principales | `rx_data[7:0]` hacia `uart_bus_if`. |
-| Dependencias | `uart_rx`, `uart_bus_if`, `CTRL/STATUS`. |
-| Observaciones | La lectura de este registro genera `rd_rx_data`, usado para limpiar `rx_ready`. |
+| Campo                | Descripción                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| Nombre lógico        | `uart_rxdata`                                                                              |
+| Nivel                | 4                                                                                          |
+| Dirección            | `0x0001_0048`                                                                              |
+| Responsabilidad      | Almacenar el byte recibido por `uart_rx`.                                                  |
+| Entradas principales | `rx_data[7:0]`, `rx_ready`.                                                                |
+| Salidas principales  | `rx_data[7:0]` hacia `uart_bus_if`.                                                        |
+| Dependencias         | `uart_rx`, `uart_bus_if`, `CTRL/STATUS`.                                                   |
+| Observaciones        | La lectura de este registro genera `rd_rx_data`, usado para limpiar la bandera `rx_ready`. |
 
 #### 4.4.5 Generador de baud rate
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `baud_gen` |
-| Nivel | 4 |
-| Responsabilidad | Generar pulsos de temporización para 115200 baudios. |
-| Entradas principales | Reloj del sistema de 50 MHz. |
-| Salidas principales | `baud_tick`, `sample_tick`. |
-| Dependencias | `uart_tx`, `uart_rx`. |
-| Observaciones | Usa aproximadamente 434 ciclos de reloj por bit. |
+| Campo                | Descripción                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Nombre lógico        | `baud_gen`                                                                                |
+| Nivel                | 4                                                                                         |
+| Responsabilidad      | Generar pulsos de temporización para transmisión y recepción UART a 115200 baudios.       |
+| Entradas principales | Reloj del sistema de 50 MHz.                                                              |
+| Salidas principales  | `baud_tick`, `sample_tick`.                                                               |
+| Dependencias         | `uart_tx`, `uart_rx`.                                                                     |
+| Observaciones        | Usa aproximadamente 434 ciclos de reloj por bit para obtener 115200 baudios desde 50 MHz. |
+
+| Señal         | Destino   | Descripción                                          |
+| ------------- | --------- | ---------------------------------------------------- |
+| `baud_tick`   | `uart_tx` | Marca la cadencia de transmisión de cada bit.        |
+| `sample_tick` | `uart_rx` | Marca el instante de muestreo de los bits recibidos. |
 
 #### 4.4.6 Transmisor UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_tx` |
-| Nivel | 4 |
-| Responsabilidad | Serializar un byte en una trama UART 8N1. |
-| Entradas principales | `tx_data[7:0]`, `tx_start`, `baud_tick`, `tx_enable`. |
-| Salidas principales | `uart_tx_o`, `tx_busy`, `tx_ready`. |
-| Dependencias | `TXDATA`, `baud_gen`, `CTRL/STATUS`. |
-| Observaciones | FSM interna: `IDLE`, `START`, `DATA`, `STOP`. |
+| Campo                | Descripción                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| Nombre lógico        | `uart_tx`                                                                |
+| Nivel                | 4                                                                        |
+| Responsabilidad      | Serializar un byte en una trama UART 8N1 y transmitirla por `uart_tx_o`. |
+| Entradas principales | `tx_data[7:0]`, `tx_start`, `baud_tick`.                                 |
+| Salidas principales | `uart_tx_o`, `tx_busy`, `tx_ready`. |                                               
+| Dependencias         | `TXDATA`, `CTRL/STATUS`, `baud_gen`.                                     |
+| Observaciones        | La FSM interna recorre los estados `IDLE`, `START`, `DATA` y `STOP`.     |
 
 #### 4.4.7 Receptor UART
 
-| Campo | Descripción |
-|-------|-------------|
-| Nombre lógico | `uart_rx` |
-| Nivel | 4 |
-| Responsabilidad | Recibir una trama UART 8N1 y reconstruir el byte. |
-| Entradas principales | `uart_rx_i`, `sample_tick`, `rx_enable`, `clear_flags`. |
-| Salidas principales | `rx_data[7:0]`, `rx_ready`, `rx_error`. |
-| Dependencias | `baud_gen`, `RXDATA`, `CTRL/STATUS`. |
-| Observaciones | FSM interna: `IDLE`, `START`, `DATA`, `STOP`. |
+| Campo                | Descripción                                                                    |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Nombre lógico        | `uart_rx`                                                                      |
+| Nivel                | 4                                                                              |
+| Responsabilidad      | Recibir una trama UART 8N1, reconstruir el byte y generar la señal `rx_ready`. |
+| Entradas principales | `uart_rx_i`, `sample_tick`.                                                    |
+| Salidas principales | `rx_data[7:0]`, `rx_ready`, `rx_error`. |                                                  
+| Dependencias         | `baud_gen`, `RXDATA`, `CTRL/STATUS`.                                           |
+| Observaciones        | La FSM interna recorre los estados `IDLE`, `START`, `DATA` y `STOP`.           |
 
 
 ## 5. Periférico PS/2
