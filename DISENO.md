@@ -177,50 +177,35 @@
 
 <!-- Describe el flujo de señales para al menos 3 tipos de instrucción: tipo-R, load/store, branch -->
 
-## 3.3 Lógica combinacional de la unidad de control
+### 3.3 Lógica combinacional de la unidad de control
 
-El CPU implementado es **monociclo**: cada instrucción se completa en un único ciclo de reloj.
-En esta microarquitectura la unidad de control no requiere una FSM de estados porque no existe
-secuenciación temporal entre fases (fetch, decode, execute, memory, writeback). Todos los
-bloques del datapath operan en paralelo dentro del mismo ciclo, y la unidad de control es
-**enteramente combinacional**: dado el valor de `opcode[6:0]`, `funct3[2:0]` y `funct7[6:0]`,
-produce de forma instantánea y estática el vector de señales de control que dirige al datapath
-de ese ciclo.
+El CPU implementado es **monociclo**: cada instrucción se completa en un único ciclo de reloj. En esta microarquitectura la unidad de control no requiere una FSM de estados porque no existe secuenciación temporal entre fases como fetch, decode, execute, memory access y writeback. Todos los bloques del datapath operan dentro del mismo ciclo, y la unidad de control se comporta como lógica combinacional: a partir de `opcode[6:0]`, `funct3[2:0]`, `funct7[6:0]` y las banderas de la ALU, produce el vector de señales de control correspondiente a la instrucción actual.
 
-> **Nota de diagrama:** El diagrama de nivel 3 de la unidad de control se encuentra en
-> `docs/img/n2_control_unit_javier.png`. Si se requiere una versión actualizada alineada con
-> las señales de esta sección, deberá generarse como `docs/img/cpu_control_n3.png`.
+![Diagrama de la unidad de control combinacional](docs/img/n2_control_unit_javier.png)
 
-### Descomposición interna
+**Figura 3.3.** Diagrama de la unidad de control combinacional.
 
-La unidad de control se descompone en cinco bloques combinacionales tal como se muestra en el
-diagrama de Javier:
+El diagrama representa la unidad de control como una composición de cinco bloques combinacionales: decodificador de tipo, generador de señales de control, generador de `ImmSrc`, generador de `ALUControl` y lógica de condición de branch/selección del próximo PC. Esta solución es equivalente a la FSM solicitada para diseños multiciclo, pero adaptada a la arquitectura monociclo seleccionada.
 
-| Bloque | Nombre RTL sugerido | Entradas | Salidas | Función |
-|--------|--------------------|---------|---------|---------| 
-| Decodificador de tipo | `type_decoder` | `opcode[6:0]` | tipo interno | Identifica el formato de instrucción (R, I, S, B, U, J) y activa la ruta de decodificación correspondiente en los demás bloques. |
-| Generador de señales de control | `ctrl_signals_gen` | `opcode[6:0]` | `RegWrite`, `ALUSrc`, `MemRead`, `MemWrite`, `ResultSrc[1:0]`, `Branch`, `Jump` | Produce las señales de control del datapath que no dependen de `funct3`/`funct7`. Se implementa como tabla de verdad sobre el opcode. |
-| Generador de ImmSrc | `imm_src_gen` | `opcode[6:0]` | `ImmSrc[2:0]` | Selecciona el esquema de extensión de inmediato según el tipo de instrucción (I, S, B, U, J). |
-| Generador de ALUControl | `alu_ctrl_gen` | `opcode[6:0]`, `funct3[2:0]`, `funct7[6:0]` | `ALUControl[3:0]` | Determina la operación de la ALU combinando el tipo de instrucción con los campos de función. Para tipos R e I-aritmético consulta `funct3` y `funct7`; para loads, stores y branches usa operación fija (suma o resta). |
-| Lógica de branch y PCNextSrc | `branch_pc_logic` | `Branch`, `Jump`, `alu_zero`, `alu_lt_signed`, `funct3[2:0]` | `PCNextSrc[1:0]` | Evalúa la condición de salto según el tipo de branch (`beq`, `bne`, `blt`, `bge`) usando `alu_zero` y `alu_lt_signed`, y combina con `Jump` para determinar la fuente del siguiente PC. |
+#### Descomposición interna
 
-### Justificación de la descomposición combinacional
+| Bloque | Nombre lógico | Entradas principales | Salidas principales | Función |
+|--------|---------------|---------------------|---------------------|---------|
+| Decodificador de tipo | `type_decoder` | `opcode[6:0]` | `type_R`, `type_I`, `type_S`, `type_B`, `type_J`, `type_U` | Identifica el formato de instrucción y activa señales internas de tipo. |
+| Generador de señales de control | `ctrl_signals_gen` | Tipo de instrucción | `RegWrite`, `ALUSrc`, `ResultSrc[1:0]`, `MemRead`, `MemWrite`, `Branch`, `Jump` | Genera las señales generales del datapath. |
+| Generador de `ImmSrc` | `imm_src_gen` | Tipo de instrucción | `ImmSrc[2:0]` | Selecciona el formato de inmediato que debe construir el bloque `Extend`. |
+| Generador de `ALUControl` | `alu_ctrl_gen` | `opcode[6:0]`, `funct3[2:0]`, `funct7[6:0]` | `ALUControl[3:0]` | Selecciona la operación de la ALU. |
+| Lógica de branch y PC | `branch_pc_logic` | `Branch`, `Jump`, `funct3[2:0]`, `alu_zero`, `alu_lt_signed` | `PCNextSrc[1:0]` | Decide si se toma un branch y selecciona la fuente del próximo PC. |
 
-Elegir lógica combinacional pura sobre una FSM multiciclo tiene las siguientes implicaciones
-para este diseño:
+#### Justificación de la implementación combinacional
 
-- **CPI = 1 garantizado.** Cada instrucción ocupa exactamente un ciclo de reloj, lo que
-  simplifica el análisis de rendimiento del firmware en ensamblador.
-- **Sin registros de estado en la unidad de control.** La ausencia de estado secuencial
-  elimina los riesgos de condiciones de carrera entre señales de control y reduce los recursos
-  de flip-flops en la FPGA.
-- **Camino crítico determinado por la instrucción más lenta.** En monociclo, el período de
-  reloj debe acomodar la instrucción de mayor latencia (típicamente `lw`: PC → ROM →
-  decodificación → banco de registros → ALU → RAM → mux → banco de registros). Esto impone
-  una frecuencia máxima menor que en multiciclo, pero es aceptable para la velocidad requerida
-  por la aplicación de texto interactivo.
-- **Verificación independiente por bloque.** Cada uno de los cinco sub-bloques puede
-  verificarse con un testbench de tabla de verdad antes de integrarse.
+La implementación combinacional es coherente con la arquitectura monociclo porque cada instrucción usa un único ciclo de reloj. En lugar de avanzar por estados, la unidad de control evalúa directamente los campos de la instrucción y genera las señales necesarias para el datapath en ese mismo ciclo.
+
+Esta decisión tiene tres implicaciones principales:
+
+- **CPI = 1.** Cada instrucción ocupa un único ciclo.
+- **No hay estado interno en la unidad de control.** No se requieren flip-flops ni registros de estado dentro de `control_unit`.
+- **La ruta crítica define la frecuencia máxima.** La instrucción más lenta, típicamente `lw`, determina el retardo máximo permitido dentro del ciclo.
 
 ---
 
@@ -230,76 +215,77 @@ para este diseño:
 
 | Puerto | Ancho | Fuente en el datapath | Función |
 |--------|-------|-----------------------|---------|
-| `opcode_i` | 7 bits | `instr[6:0]` | Campo opcode de la instrucción decodificada. Determina el tipo de instrucción. |
-| `funct3_i` | 3 bits | `instr[14:12]` | Campo funct3. Discrimina variantes dentro del mismo opcode (ej. `beq` vs `bne`, `add` vs `xor`). |
-| `funct7_i` | 7 bits | `instr[30]` efectivo | Campo funct7. Distingue principalmente `add`/`sub` y `srl`/`sra`. Solo el bit 5 (`funct7[5]`) es relevante en la mayoría de los casos. |
-| `alu_zero_i` | 1 bit | Salida flag `zero` de la ALU | Indica que el resultado de la ALU es cero. Usado para evaluar condición `beq`/`bne`. |
-| `alu_lt_signed_i` | 1 bit | Salida flag `lt` de la ALU | Indica que el operando A es menor que B (comparación con signo). Usado para evaluar condición `blt`/`bge`. |
+| `opcode_i` | 7 bits | `instr[6:0]` | Campo opcode de la instrucción actual. |
+| `funct3_i` | 3 bits | `instr[14:12]` | Campo que selecciona variantes dentro de una familia de instrucciones. |
+| `funct7_i` | 7 bits | `instr[31:25]` | Campo usado principalmente para distinguir `add/sub` y `srl/sra`. |
+| `alu_zero_i` | 1 bit | Salida de la ALU | Indica que el resultado de la ALU es cero. Se usa para `beq` y `bne`. |
+| `alu_lt_signed_i` | 1 bit | Salida de la ALU | Indica comparación menor que con signo. Se usa para `blt` y `bge`. |
 
 #### Salidas
 
 | Puerto | Ancho | Destino en el datapath | Función |
 |--------|-------|------------------------|---------|
-| `RegWrite_o` | 1 bit | Puerto `WE3` del banco de registros | Habilita escritura en el registro destino al final del ciclo. |
-| `ALUSrc_o` | 1 bit | MUX de operando B de la ALU | `0`: operando B proviene del banco de registros (`RD2`). `1`: operando B proviene del extensor de signo (inmediato). |
-| `ResultSrc_o` | 2 bits | MUX de dato a escribir en el banco de registros (`WD3`) | `00`: resultado de la ALU. `01`: dato leído de memoria RAM (`ReadData`). `10`: `PC + 4` (para `jal`/`jalr`). `11`: reservado. |
-| `MemRead_o` | 1 bit | Habilitación de lectura de la RAM de datos | Activo en instrucciones `lw`. Necesario si la RAM requiere señal de lectura explícita. |
-| `MemWrite_o` | 1 bit | Puerto `WE` de la RAM de datos | Habilita escritura en memoria. Activo únicamente en instrucciones `sw`. |
-| `Branch_o` | 1 bit | Lógica de `PCNextSrc` | Indica que la instrucción es un branch condicional. Se combina con el resultado de la condición para determinar si se toma el salto. |
-| `Jump_o` | 1 bit | Lógica de `PCNextSrc` | Indica que la instrucción es un salto incondicional (`jal` o `jalr`). |
-| `ALUControl_o` | 4 bits | Puerto de operación de la ALU | Selecciona la operación aritmética o lógica a ejecutar. Ver codificación en la tabla de instrucciones. |
-| `ImmSrc_o` | 3 bits | Bloque extensor de signo (`Extend`) | Selecciona el esquema de construcción del inmediato según el tipo de instrucción. Ver codificación abajo. |
-| `PCNextSrc_o` | 2 bits | MUX de selección del próximo PC | `00`: `PC + 4` (secuencial). `01`: `PCTarget` (branch tomado o `jal`). `10`: resultado de la ALU (para `jalr`). `11`: reservado. |
+| `RegWrite_o` | 1 bit | Banco de registros | Habilita la escritura del registro destino. |
+| `ALUSrc_o` | 1 bit | MUX de operando B de la ALU | Selecciona entre dato de registro e inmediato. |
+| `ResultSrc_o` | 2 bits | MUX de dato de escritura del banco de registros | Selecciona entre resultado de ALU, dato de memoria o `PC + 4`. |
+| `MemRead_o` | 1 bit | Memoria/interfaz de datos | Habilita lectura para instrucciones tipo load. |
+| `MemWrite_o` | 1 bit | Memoria/interfaz de datos | Habilita escritura para instrucciones tipo store. |
+| `Branch_o` | 1 bit | Lógica de branch | Indica instrucción de salto condicional. |
+| `Jump_o` | 1 bit | Lógica de PC | Indica instrucción de salto incondicional (`jal` o `jalr`). |
+| `ALUControl_o` | 4 bits | ALU | Selecciona la operación aritmética/lógica. |
+| `ImmSrc_o` | 3 bits | Bloque `Extend` | Selecciona el formato de inmediato. |
+| `PCNextSrc_o` | 2 bits | MUX del próximo PC | Selecciona la fuente del nuevo PC. |
 
-#### Codificación de ImmSrc
+#### Codificación de `ImmSrc`
 
-| `ImmSrc[2:0]` | Tipo | Campos usados | Descripción |
-|---------------|------|---------------|-------------|
-| `000` | I | `instr[31:20]` | Inmediato con signo de 12 bits (loads, `addi`, etc.) |
-| `001` | S | `instr[31:25]`, `instr[11:7]` | Inmediato de almacenamiento de 12 bits |
-| `010` | B | `instr[31]`, `instr[7]`, `instr[30:25]`, `instr[11:8]` | Inmediato de branch de 13 bits |
-| `011` | J | `instr[31]`, `instr[19:12]`, `instr[20]`, `instr[30:21]` | Inmediato de salto de 21 bits (`jal`) |
-| `100` | U | `instr[31:12]` | Inmediato de 20 bits en posición alta (`lui`, `auipc`) |
+| `ImmSrc[2:0]` | Tipo de inmediato | Uso |
+|---------------|-------------------|-----|
+| `000` | I-type | `addi`, `andi`, `ori`, `xori`, `slti`, `sltiu`, `lw`, `jalr`. |
+| `001` | S-type | `sw`. |
+| `010` | B-type | `beq`, `bne`, `blt`, `bge`. |
+| `011` | J-type | `jal`. |
+| `100` | U-type | `lui`, `auipc`, si se incluyen en el subconjunto implementado. |
 
-#### Codificación de ALUControl
+#### Codificación de `ALUControl`
 
-| `ALUControl[3:0]` | Operación ALU | Instrucciones que la usan |
-|-------------------|---------------|--------------------------|
-| `0000` | ADD | `add`, `addi`, `lw`, `sw`, `jal`, `jalr`, branches (cálculo de dirección) |
-| `0001` | SUB | `sub`, `beq`, `bne`, `blt`, `bge` (evaluación de condición) |
-| `0010` | AND | `and`, `andi` |
-| `0011` | OR | `or`, `ori` |
-| `0100` | XOR | `xor`, `xori` |
-| `0101` | SLL | `sll`, `slli` |
-| `0110` | SRL | `srl`, `srli` |
-| `0111` | SRA | `sra`, `srai` |
-| `1000` | SLT | `slt`, `slti` |
-| `1001` | SLTU | `sltu`, `sltui` |
+| `ALUControl[3:0]` | Operación | Instrucciones |
+|-------------------|-----------|---------------|
+| `0000` | ADD | `add`, `addi`, `lw`, `sw`, `jalr` y cálculo de direcciones. |
+| `0001` | SUB | `sub`, `beq`, `bne`, `blt`, `bge`. |
+| `0010` | AND | `and`, `andi`. |
+| `0011` | OR | `or`, `ori`. |
+| `0100` | XOR | `xor`, `xori`. |
+| `0101` | SLL | `sll`, `slli`. |
+| `0110` | SRL | `srl`, `srli`. |
+| `0111` | SRA | `sra`, `srai`. |
+| `1000` | SLT | `slt`, `slti`. |
+| `1001` | SLTU | `sltu`, `sltiu`. |
+
+#### Codificación de `PCNextSrc`
+
+| `PCNextSrc[1:0]` | Fuente del próximo PC |
+|------------------|-----------------------|
+| `00` | `PC + 4`, ejecución secuencial. |
+| `01` | Target de branch tomado. |
+| `10` | Target de `jal`. |
+| `11` | Target de `jalr`. |
 
 ---
 
 ### 3.5 Tabla de señales de control por tipo de instrucción
 
-La tabla cubre todas las instrucciones del subconjunto RV32I requerido por el proyecto. Las
-columnas corresponden exactamente a las señales de salida de la unidad de control. Los valores
-de `ALUControl` y `ImmSrc` usan la codificación de las tablas anteriores.
-
-> **Convención:** `—` indica que el valor de la señal no afecta la operación y puede ser
-> cualquiera (don't care). `x` en `funct7` indica que solo el bit 5 es relevante para esa
-> instrucción.
-
-| Instrucción | Tipo | `RegWrite` | `ALUSrc` | `ResultSrc` | `MemRead` | `MemWrite` | `Branch` | `Jump` | `ALUControl` | `ImmSrc` | `PCNextSrc` |
-|-------------|------|:----------:|:--------:|:-----------:|:---------:|:----------:|:--------:|:------:|:------------:|:--------:|:-----------:|
-| `add` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0000` | `—` | `00` |
-| `sub` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0001` | `—` | `00` |
-| `and` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0010` | `—` | `00` |
-| `or` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0011` | `—` | `00` |
-| `xor` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0100` | `—` | `00` |
-| `sll` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0101` | `—` | `00` |
-| `srl` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0110` | `—` | `00` |
-| `sra` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0111` | `—` | `00` |
-| `slt` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1000` | `—` | `00` |
-| `sltu` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1001` | `—` | `00` |
+| Instrucción | Tipo | `RegWrite` | `ALUSrc` | `ResultSrc[1:0]` | `MemRead` | `MemWrite` | `Branch` | `Jump` | `ALUControl[3:0]` | `ImmSrc[2:0]` | `PCNextSrc[1:0]` |
+|-------------|------|:----------:|:--------:|:----------------:|:---------:|:----------:|:--------:|:------:|:------------------:|:--------------:|:----------------:|
+| `add` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0000` | — | `00` |
+| `sub` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0001` | — | `00` |
+| `and` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0010` | — | `00` |
+| `or` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0011` | — | `00` |
+| `xor` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0100` | — | `00` |
+| `sll` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0101` | — | `00` |
+| `srl` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0110` | — | `00` |
+| `sra` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `0111` | — | `00` |
+| `slt` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1000` | — | `00` |
+| `sltu` | R | 1 | 0 | `00` | 0 | 0 | 0 | 0 | `1001` | — | `00` |
 | `addi` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0000` | `000` | `00` |
 | `andi` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0010` | `000` | `00` |
 | `ori` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0011` | `000` | `00` |
@@ -308,32 +294,25 @@ de `ALUControl` y `ImmSrc` usan la codificación de las tablas anteriores.
 | `srli` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0110` | `000` | `00` |
 | `srai` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `0111` | `000` | `00` |
 | `slti` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `1000` | `000` | `00` |
-| `sltui` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `1001` | `000` | `00` |
+| `sltiu` | I | 1 | 1 | `00` | 0 | 0 | 0 | 0 | `1001` | `000` | `00` |
 | `lw` | I | 1 | 1 | `01` | 1 | 0 | 0 | 0 | `0000` | `000` | `00` |
-| `sw` | S | 0 | 1 | `—` | 0 | 1 | 0 | 0 | `0000` | `001` | `00` |
-| `beq` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
-| `bne` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
-| `blt` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
-| `bge` | B | 0 | 0 | `—` | 0 | 0 | 1 | 0 | `0001` | `010` | cond¹ |
-| `jal` | J | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `011` | `01` |
-| `jalr` | I | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `000` | `10` |
+| `sw` | S | 0 | 1 | — | 0 | 1 | 0 | 0 | `0000` | `001` | `00` |
+| `beq` | B | 0 | 0 | — | 0 | 0 | 1 | 0 | `0001` | `010` | cond. |
+| `bne` | B | 0 | 0 | — | 0 | 0 | 1 | 0 | `0001` | `010` | cond. |
+| `blt` | B | 0 | 0 | — | 0 | 0 | 1 | 0 | `0001` | `010` | cond. |
+| `bge` | B | 0 | 0 | — | 0 | 0 | 1 | 0 | `0001` | `010` | cond. |
+| `jal` | J | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `011` | `10` |
+| `jalr` | I | 1 | 1 | `10` | 0 | 0 | 0 | 1 | `0000` | `000` | `11` |
 
-> ¹ **PCNextSrc para branches:** La señal `PCNextSrc` para instrucciones de tipo B no sale
-> directamente de la tabla de verdad del opcode; la determina la lógica `branch_pc_logic`
-> en función de `Branch = 1`, `funct3[2:0]`, `alu_zero` y `alu_lt_signed`:
->
-> | Instrucción | Condición de salto tomado |
-> |-------------|--------------------------|
-> | `beq` | `alu_zero = 1` |
-> | `bne` | `alu_zero = 0` |
-> | `blt` | `alu_lt_signed = 1` |
-> | `bge` | `alu_lt_signed = 0` |
->
-> Si la condición se cumple: `PCNextSrc = 01` (PCTarget). Si no se cumple: `PCNextSrc = 00`
-> (PC + 4). Este es el único punto donde las salidas de la ALU retroalimentan a la unidad de
-> control dentro del mismo ciclo.
+Para instrucciones de branch, `PCNextSrc` depende de la evaluación de la condición. Si la condición se cumple, `PCNextSrc = 01`; si no se cumple, `PCNextSrc = 00`.
 
----
+| Instrucción | Condición de salto tomado |
+|-------------|--------------------------|
+| `beq` | `alu_zero = 1` |
+| `bne` | `alu_zero = 0` |
+| `blt` | `alu_lt_signed = 1` |
+| `bge` | `alu_lt_signed = 0` |
+
 
 ### 3.6 Nivel 4 — Fichas de módulos del CPU
 
@@ -369,64 +348,81 @@ de `ALUControl` y `ImmSrc` usan la codificación de las tablas anteriores.
 
 #### 3.6.4 Unidad de Control
 
-**Nombre:** `control_unit`
+La unidad de control es el bloque combinacional encargado de transformar la instrucción actual y las banderas de la ALU en señales de control para el datapath.
 
-**Objetivo:** Generar el vector completo de señales de control del datapath a partir de los
-campos de la instrucción en curso (`opcode`, `funct3`, `funct7`) y de los flags de resultado
-de la ALU (`alu_zero`, `alu_lt_signed`), de forma puramente combinacional y en un único ciclo
-de reloj.
+##### Decodificador de tipo
 
-**Entradas:**
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `type_decoder` |
+| Nivel | 4 |
+| Responsabilidad | Identificar el formato de instrucción a partir de `opcode[6:0]`. |
+| Entradas | `opcode[6:0]` |
+| Salidas internas | `type_R`, `type_I_arith`, `type_I_load`, `type_I_jalr`, `type_S`, `type_B`, `type_J`, `type_U` |
+| Dependencias | Campo `opcode` de la instrucción. |
+| Observaciones | Sus salidas son señales internas combinacionales utilizadas por los demás bloques de control. |
 
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `opcode_i` | 7 bits | Campo `instr[6:0]`; determina el tipo de instrucción |
-| `funct3_i` | 3 bits | Campo `instr[14:12]`; discrimina variantes dentro del opcode |
-| `funct7_i` | 7 bits | Campo `instr[31:25]`; bit 5 distingue `add`/`sub` y `srl`/`sra` |
-| `alu_zero_i` | 1 bit | Flag `zero` de la ALU; usado para evaluar `beq` y `bne` |
-| `alu_lt_signed_i` | 1 bit | Flag `lt` de la ALU; usado para evaluar `blt` y `bge` |
+##### Generador de señales de control
 
-**Salidas:**
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ctrl_signals_gen` |
+| Nivel | 4 |
+| Responsabilidad | Generar las señales generales de control del datapath a partir del tipo de instrucción. |
+| Entradas | Señales internas de tipo. |
+| Salidas | `RegWrite`, `ALUSrc`, `ResultSrc[1:0]`, `MemRead`, `MemWrite`, `Branch`, `Jump` |
+| Dependencias | `type_decoder`, datapath. |
+| Observaciones | No depende de `funct3` ni `funct7`; solo del tipo de instrucción. |
 
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `RegWrite_o` | 1 bit | Habilita escritura en el banco de registros |
-| `ALUSrc_o` | 1 bit | Selecciona el segundo operando de la ALU (registro vs. inmediato) |
-| `ResultSrc_o` | 2 bits | Selecciona el dato a escribir en el banco de registros |
-| `MemRead_o` | 1 bit | Habilita lectura de la RAM de datos |
-| `MemWrite_o` | 1 bit | Habilita escritura en la RAM de datos |
-| `Branch_o` | 1 bit | Indica instrucción de branch condicional |
-| `Jump_o` | 1 bit | Indica salto incondicional (`jal`, `jalr`) |
-| `ALUControl_o` | 4 bits | Operación a ejecutar en la ALU |
-| `ImmSrc_o` | 3 bits | Esquema de construcción del inmediato en el extensor de signo |
-| `PCNextSrc_o` | 2 bits | Fuente del próximo valor del PC |
+##### Generador de `ImmSrc`
 
-**Relación con otros módulos:**
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `imm_src_gen` |
+| Nivel | 4 |
+| Responsabilidad | Seleccionar el esquema de inmediato que debe construir el bloque `Extend`. |
+| Entradas | Señales internas de tipo. |
+| Salida | `ImmSrc[2:0]` |
+| Dependencias | `type_decoder`, bloque `Extend`. |
+| Observaciones | Para instrucciones tipo R, el valor de `ImmSrc` no afecta la ejecución. |
 
-- Recibe `opcode`, `funct3` y `funct7` directamente de la instrucción en curso (desde la
-  memoria ROM a través del datapath de José).
-- Recibe `alu_zero` y `alu_lt_signed` desde la salida de flags de la ALU.
-- Sus salidas se conectan a todos los MUXes, puertos de habilitación y entradas de operación
-  del datapath: banco de registros, ALU, extensor de signo, RAM de datos y lógica de PC.
+##### Generador de `ALUControl`
 
-**Funcionamiento:** Al inicio de cada ciclo, en cuanto la instrucción está disponible en la
-salida de la ROM, los cinco bloques combinacionales internos propagan sus salidas sin esperar
-ningún flanco de reloj. El bloque `ctrl_signals_gen` e `imm_src_gen` dependen solo de
-`opcode`; el bloque `alu_ctrl_gen` combina `opcode`, `funct3` y el bit 5 de `funct7`; el
-bloque `branch_pc_logic` evalúa la condición de salto usando los flags de la ALU una vez que
-esta termina de calcular (dentro del mismo ciclo). No existe ningún registro interno en la
-unidad de control.
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `alu_ctrl_gen` |
+| Nivel | 4 |
+| Responsabilidad | Determinar la operación de la ALU. |
+| Entradas | `opcode[6:0]`, `funct3[2:0]`, `funct7[6:0]`, señales internas de tipo. |
+| Salida | `ALUControl[3:0]` |
+| Dependencias | ALU del datapath. |
+| Observaciones | Para loads y stores fuerza ADD; para branches habilita la operación necesaria para generar banderas de comparación. |
 
-**Justificación de diseño:** La implementación combinacional es la opción natural para un CPU
-monociclo y está directamente alineada con la arquitectura seleccionada en la sección 11.1
-(alternativa uniciclo). Permite implementar la tabla de verdad completa de señales de control
-mediante sentencias `case` sobre `opcode` en SystemVerilog, lo que resulta en síntesis
-eficiente sobre la FPGA Cyclone V y facilita la verificación exhaustiva con un testbench de
-tabla de verdad.
+##### Lógica `branch_condition` y `PCNextSrc`
 
-> **Diagrama pendiente:** El diagrama `docs/img/cpu_control_n3.png` que muestre los cinco
-> sub-bloques internos, sus interconexiones internas y la conexión completa con el datapath
-> de José debe generarse antes de la entrega final del DISENO.md. Ver nota en sección 3.3.
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `branch_pc_logic` |
+| Nivel | 4 |
+| Responsabilidad | Evaluar condiciones de branch y seleccionar la fuente del próximo PC. |
+| Entradas | `Branch`, `Jump`, `funct3[2:0]`, `alu_zero`, `alu_lt_signed`, `type_I_jalr` |
+| Salida | `PCNextSrc[1:0]` |
+| Dependencias | Banderas de la ALU y MUX de selección del próximo PC. |
+| Observaciones | Es el único submódulo de la unidad de control que recibe retroalimentación combinacional desde la ALU. |
+
+| `funct3[2:0]` | Instrucción | Condición |
+|---------------|-------------|-----------|
+| `000` | `beq` | Salta si `alu_zero = 1`. |
+| `001` | `bne` | Salta si `alu_zero = 0`. |
+| `100` | `blt` | Salta si `alu_lt_signed = 1`. |
+| `101` | `bge` | Salta si `alu_lt_signed = 0`. |
+
+| `PCNextSrc[1:0]` | Fuente del próximo PC |
+|------------------|-----------------------|
+| `00` | `PC + 4`. |
+| `01` | Target de branch tomado. |
+| `10` | Target de `jal`. |
+| `11` | Target de `jalr`. |
 
 #### 3.6.5 Extensión de Signo
 
@@ -448,44 +444,25 @@ tabla de verdad.
 
 **Figura 4.1.** Diagrama de nivel 3 del periférico UART 115200-8N1.
 
-El periférico UART se descompone en tres bloques principales: la interfaz de bus `uart_bus_if`,
-el banco de registros mapeados en memoria y el núcleo UART 115200-8N1. Esta división permite
-separar la comunicación con el bus del sistema, el almacenamiento de datos y control visible por
-software, y la lógica serial encargada de transmitir y recibir tramas UART.
+El periférico UART se descompone en tres bloques principales: la interfaz de bus `uart_bus_if`, el banco de registros mapeados en memoria y el núcleo UART 115200-8N1. Esta división permite separar la comunicación con el bus del sistema, el almacenamiento de datos y control visible por software, y la lógica serial encargada de transmitir y recibir tramas UART.
 
-El módulo `uart_bus_if` recibe los accesos provenientes del bus de interconexión mediante las
-señales `addr[31:0]`, `wdata[31:0]`, `we`, `re` y `cs_uart`. A partir de estas señales genera
-operaciones internas de lectura y escritura sobre los registros UART y, cuando el procesador lee
-el periférico, responde hacia el bus con `uart_rdata[31:0]` y `uart_ready`.
+El módulo `uart_bus_if` recibe los accesos provenientes del bus de interconexión mediante las señales `addr[31:0]`, `wdata[31:0]`, `we`, `re` y `cs_uart`. A partir de estas señales genera operaciones internas de lectura y escritura sobre los registros UART y responde hacia el bus con `uart_rdata[31:0]` y `uart_ready`.
 
-Los registros mapeados en memoria son `CTRL/STATUS` en `0x0001_0040`, `TXDATA` en
-`0x0001_0044` y `RXDATA` en `0x0001_0048`. El registro `CTRL/STATUS` concentra las señales
-de habilitación, control y estado del periférico. `TXDATA` almacena el byte que será transmitido
-por el bloque `UART TX`; la escritura en este registro genera internamente la señal `tx_start`.
-`RXDATA` almacena el byte entregado por el bloque `UART RX`; su lectura limpia la bandera
-`rx_ready`.
+Los registros mapeados en memoria son `CTRL/STATUS` en `0x0001_0040`, `TXDATA` en `0x0001_0044` y `RXDATA` en `0x0001_0048`. El registro `CTRL/STATUS` concentra señales de habilitación, control y estado. `TXDATA` almacena el byte que será transmitido por `uart_tx`; su escritura genera `tx_start`. `RXDATA` almacena el byte entregado por `uart_rx`; su lectura limpia la bandera `rx_ready`.
 
-El núcleo UART implementa la comunicación serial con configuración 115200-8N1: 115200 baudios,
-8 bits de datos, sin paridad y 1 bit de parada. Se divide en tres submódulos: `Baud generator`,
-`UART TX` y `UART RX`. El `Baud generator` deriva los pulsos de temporización a partir del
-reloj de sistema de 50 MHz usando un divisor de ⌊50 000 000 / 115 200⌋ = 434 ciclos por bit.
-Genera `baud_tick` para el transmisor y `sample_tick` para el receptor (muestreo en el centro
-del bit). El bloque `UART TX` toma `tx_data[7:0]` y `tx_start`, construye la trama serial
-(start, 8 bits LSB-first, stop) y entrega la línea externa `uart_tx_o`. El bloque `UART RX`
-recibe la línea externa `uart_rx_i`, reconstruye el byte y entrega `rx_data[7:0]`, `rx_ready` y
-`rx_error` al banco de registros.
+El núcleo UART implementa la comunicación serial con configuración 115200-8N1: 115200 baudios, 8 bits de datos, sin paridad y 1 bit de parada. Se divide en `baud_gen`, `uart_tx` y `uart_rx`. El generador de baud rate deriva los pulsos de temporización a partir del reloj de 50 MHz usando aproximadamente 434 ciclos por bit.
 
 **Submódulos representados en el nivel 3:**
 
-| Bloque | Nombre RTL | Función |
-|--------|------------|---------|
-| Interfaz de bus | `uart_bus_if` | Traduce accesos del bus del sistema en operaciones de lectura/escritura sobre los registros UART. Genera `uart_rdata[31:0]` y `uart_ready` hacia el bus. |
-| Registro de control y estado | `CTRL/STATUS` `0x0001_0040` | Almacena y expone las banderas `rx_ready`, `rx_error`, `tx_busy`, `tx_ready` y las habilitaciones `tx_enable`, `rx_enable`, `clear_flags`. |
-| Registro de transmisión | `TXDATA` `0x0001_0044` | Almacena el byte a transmitir. La escritura desde el bus genera internamente `tx_start` hacia el transmisor. |
-| Registro de recepción | `RXDATA` `0x0001_0048` | Almacena el último byte recibido. La lectura desde el bus limpia la bandera `rx_ready` en `CTRL/STATUS`. |
-| Generador de baud rate | `baud_gen` | Genera `baud_tick` (1 pulso cada 434 ciclos) y `sample_tick` (muestreo en el centro del bit) a partir del reloj de 50 MHz. |
-| Transmisor UART | `uart_tx` | Serializa el byte de `tx_data[7:0]` en la trama 8N1 y lo envía por `uart_tx_o`. Reporta `tx_busy` y `tx_ready` al banco de registros. |
-| Receptor UART | `uart_rx` | Detecta el bit de inicio, muestrea los 8 bits de datos y el bit de parada en `uart_rx_i`. Entrega `rx_data[7:0]`, `rx_ready` y `rx_error`. |
+| Bloque | Nombre lógico | Función |
+|--------|---------------|---------|
+| Interfaz de bus | `uart_bus_if` | Traduce accesos del bus en operaciones de lectura/escritura sobre registros UART. |
+| Registro de control/estado | `CTRL/STATUS` | Expone banderas de estado y señales de habilitación. |
+| Registro de transmisión | `TXDATA` | Almacena el byte a transmitir y genera `tx_start`. |
+| Registro de recepción | `RXDATA` | Almacena el byte recibido y permite su lectura por software. |
+| Generador de baud rate | `baud_gen` | Genera `baud_tick` y `sample_tick`. |
+| Transmisor UART | `uart_tx` | Serializa una trama `start · 8 data · stop`. |
+| Receptor UART | `uart_rx` | Reconstruye el byte recibido y genera `rx_ready`/`rx_error`. |
 
 **Conexiones principales del nivel 3:**
 
@@ -503,8 +480,8 @@ recibe la línea externa `uart_rx_i`, reconstruye el byte y entrega `rx_data[7:0
 | `uart_tx` | `CTRL/STATUS` | `tx_busy`, `tx_ready` |
 | `baud_gen` | `uart_tx` | `baud_tick` |
 | `baud_gen` | `uart_rx` | `sample_tick` |
-| Señal externa | `uart_rx` | `uart_rx_i` (serial RX) |
-| `uart_tx` | Señal externa | `uart_tx_o` (serial TX) |
+| Señal externa | `uart_rx` | `uart_rx_i` |
+| `uart_tx` | Señal externa | `uart_tx_o` |
 
 ---
 
@@ -512,222 +489,146 @@ recibe la línea externa `uart_rx_i`, reconstruye el byte y entrega `rx_data[7:0
 
 #### FSM del transmisor (`uart_tx`)
 
-El transmisor implementa una FSM de 4 estados. Al recibir `tx_start`, carga el byte en un
-registro de desplazamiento y serializa los bits a la tasa de `baud_tick`.
-
 | Estado | Condición de salida | Próximo estado | Señales activas |
-|--------|--------------------|--------------  |-----------------|
+|--------|--------------------|----------------|-----------------|
 | `IDLE` | `tx_start = 1` | `START` | `tx_ready = 1`, `uart_tx_o = 1` |
-| `START` | `baud_tick = 1` | `DATA` | `uart_tx_o = 0` (bit de inicio), `tx_busy = 1` |
-| `DATA` | `baud_tick = 1` y `bit_count < 8` | `DATA` | `uart_tx_o = tx_shift[0]`, desplazamiento derecha |
-| `DATA` | `baud_tick = 1` y `bit_count = 8` | `STOP` | último bit enviado |
-| `STOP` | `baud_tick = 1` | `IDLE` | `uart_tx_o = 1` (bit de parada), `tx_ready = 1` |
+| `START` | `baud_tick = 1` | `DATA` | `uart_tx_o = 0`, `tx_busy = 1` |
+| `DATA` | `baud_tick = 1` y `bit_count < 8` | `DATA` | Transmite `tx_shift[0]` y desplaza el registro |
+| `DATA` | `baud_tick = 1` y `bit_count = 8` | `STOP` | Último bit enviado |
+| `STOP` | `baud_tick = 1` | `IDLE` | `uart_tx_o = 1`, `tx_ready = 1` |
 
 #### FSM del receptor (`uart_rx`)
 
-El receptor muestrea la línea `uart_rx_i` con `sample_tick` (centro del bit) para reconstruir
-el byte recibido.
-
 | Estado | Condición de salida | Próximo estado | Señales activas |
-|--------|--------------------|--------------  |-----------------|
-| `IDLE` | flanco descendente en `uart_rx_i` | `START` | en espera |
-| `START` | `sample_tick = 1` (centro del bit de inicio) | `DATA` | verifica que `uart_rx_i = 0`; si no, vuelve a `IDLE` |
-| `DATA` | `sample_tick = 1` y `bit_count < 8` | `DATA` | captura bit en `rx_shift`, incrementa `bit_count` |
-| `DATA` | `sample_tick = 1` y `bit_count = 8` | `STOP` | byte completo en `rx_shift` |
+|--------|--------------------|----------------|-----------------|
+| `IDLE` | Flanco descendente en `uart_rx_i` | `START` | Espera bit de inicio |
+| `START` | `sample_tick = 1` y `uart_rx_i = 0` | `DATA` | Valida bit de inicio |
+| `START` | `sample_tick = 1` y `uart_rx_i = 1` | `IDLE` | Descarta glitch |
+| `DATA` | `sample_tick = 1` y `bit_count < 8` | `DATA` | Captura bit en `rx_shift` |
+| `DATA` | `sample_tick = 1` y `bit_count = 8` | `STOP` | Byte completo |
 | `STOP` | `sample_tick = 1` y `uart_rx_i = 1` | `IDLE` | `rx_ready = 1`, `rx_data = rx_shift` |
-| `STOP` | `sample_tick = 1` y `uart_rx_i = 0` | `IDLE` | `rx_error = 1` (error de enmarcado) |
+| `STOP` | `sample_tick = 1` y `uart_rx_i = 0` | `IDLE` | `rx_error = 1` |
 
 ---
 
 ### 4.3 Tabla de interfaz de puertos
 
-La siguiente tabla describe la interfaz del periférico UART completo tal como es vista desde el
-bus de interconexión y desde las señales externas de la FPGA.
-
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
-| `clk_i` | Entrada | 1 bit | Reloj del sistema (50 MHz) |
-| `rst_i` | Entrada | 1 bit | Reset activo en bajo |
-| `addr_i` | Entrada | 32 bits | Dirección del registro accedido en el espacio de periféricos |
-| `wdata_i` | Entrada | 32 bits | Dato de escritura desde el bus |
-| `we_i` | Entrada | 1 bit | Habilitación de escritura |
-| `re_i` | Entrada | 1 bit | Habilitación de lectura |
-| `cs_uart_i` | Entrada | 1 bit | Chip select: selecciona este periférico |
-| `rdata_o` | Salida | 32 bits | Dato de lectura hacia el bus |
-| `ready_o` | Salida | 1 bit | Indica que la respuesta del periférico es válida |
-| `uart_rx_i` | Entrada | 1 bit | Línea serial de recepción desde la PC |
-| `uart_tx_o` | Salida | 1 bit | Línea serial de transmisión hacia la PC |
+| `clk_i` | Entrada | 1 bit | Reloj del sistema de 50 MHz. |
+| `rst_i` | Entrada | 1 bit | Reset activo en bajo. |
+| `addr_i` | Entrada | 32 bits | Dirección del registro accedido. |
+| `wdata_i` | Entrada | 32 bits | Dato de escritura desde el bus. |
+| `we_i` | Entrada | 1 bit | Habilitación de escritura. |
+| `re_i` | Entrada | 1 bit | Habilitación de lectura. |
+| `cs_uart_i` | Entrada | 1 bit | Chip select del periférico UART. |
+| `uart_rdata_o` | Salida | 32 bits | Dato de lectura hacia el bus. |
+| `uart_ready_o` | Salida | 1 bit | Respuesta válida del periférico. |
+| `uart_rx_i` | Entrada | 1 bit | Línea serial de recepción. |
+| `uart_tx_o` | Salida | 1 bit | Línea serial de transmisión. |
 
 ---
 
 ### 4.4 Nivel 4 — Fichas de módulos del UART
 
+El periférico UART se descompone en una interfaz de bus, tres registros mapeados en memoria y un núcleo serial 115200-8N1 compuesto por generador de baud rate, transmisor y receptor.
+
 #### 4.4.1 Interfaz de bus UART
 
-**Nombre:** `uart_bus_if`
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_bus_if` |
+| Nivel | 4 |
+| Responsabilidad | Traducir accesos del bus hacia operaciones de lectura/escritura sobre los registros UART. |
+| Entradas principales | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_uart`, `status[31:0]`, `rx_data[7:0]` |
+| Salidas principales | `uart_rdata[31:0]`, `uart_ready`, `wr_ctrl`, `rd_status`, `wr_tx_data[7:0]`, `rd_rx_data` |
+| Dependencias | Bus e interconexión, `CTRL/STATUS`, `TXDATA`, `RXDATA`. |
+| Observaciones | Decodifica las direcciones `0x0001_0040`, `0x0001_0044` y `0x0001_0048`. |
 
-**Objetivo:** Traducir los accesos de lectura y escritura provenientes del bus del sistema en
-operaciones internas sobre los registros `CTRL/STATUS`, `TXDATA` y `RXDATA`, y generar la
-respuesta `uart_rdata[31:0]` y `uart_ready` hacia el bus.
+#### 4.4.2 Registro CTRL/STATUS del UART
 
-**Entradas:**
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_ctrl_status` |
+| Nivel | 4 |
+| Dirección | `0x0001_0040` |
+| Responsabilidad | Concentrar señales de control y estado visibles por software. |
+| Entradas principales | `wr_ctrl`, `wdata[31:0]`, `rx_ready`, `rx_error`, `tx_busy`, `tx_ready`, `rd_rx_data` |
+| Salidas principales | `status[31:0]`, `tx_enable`, `rx_enable`, `clear_flags` |
+| Dependencias | `uart_bus_if`, `uart_rx`, `uart_tx`. |
+| Observaciones | Permite consultar estado de transmisión/recepción y controlar la habilitación del núcleo UART. |
 
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `addr_i` | 32 bits | Dirección del registro accedido |
-| `wdata_i` | 32 bits | Dato de escritura desde el bus |
-| `we_i` | 1 bit | Habilitación de escritura |
-| `re_i` | 1 bit | Habilitación de lectura |
-| `cs_uart_i` | 1 bit | Chip select |
-| `status_i` | 32 bits | Valor actual del registro `CTRL/STATUS` para lectura |
-| `rx_data_i` | 8 bits | Byte disponible en `RXDATA` para lectura |
+| Bit / señal | Tipo | Descripción |
+|-------------|------|-------------|
+| `tx_ready` | RO | Transmisor disponible. |
+| `rx_ready` | RO | Byte recibido disponible. |
+| `rx_error` | RO | Error de recepción. |
+| `tx_enable` | R/W | Habilita transmisión. |
+| `rx_enable` | R/W | Habilita recepción. |
+| `clear_flags` | W | Limpia banderas de estado/error. |
 
-**Salidas:**
+#### 4.4.3 Registro TXDATA del UART
 
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `rdata_o` | 32 bits | Dato leído, multiplexado según la dirección |
-| `ready_o` | 1 bit | Respuesta válida al bus |
-| `wr_ctrl_o` | 1 bit | Pulso de escritura hacia `CTRL/STATUS` |
-| `rd_status_o` | 1 bit | Pulso de lectura de `CTRL/STATUS` |
-| `wr_tx_data_o` | 8 bits | Byte a escribir en `TXDATA` |
-| `rd_rx_data_o` | 1 bit | Pulso de lectura de `RXDATA` (limpia `rx_ready`) |
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_txdata` |
+| Nivel | 4 |
+| Dirección | `0x0001_0044` |
+| Responsabilidad | Almacenar el byte que será transmitido. |
+| Entradas principales | `wr_tx_data[7:0]`, pulso de escritura desde `uart_bus_if`. |
+| Salidas principales | `tx_data[7:0]`, `tx_start`. |
+| Dependencias | `uart_bus_if`, `uart_tx`. |
+| Observaciones | La escritura genera un pulso `tx_start` hacia el transmisor. |
 
-**Relación con otros módulos:** Conecta el bus de interconexión con el banco de registros del
-periférico. Es el único punto de entrada y salida de datos entre el CPU y el UART.
+#### 4.4.4 Registro RXDATA del UART
 
-**Funcionamiento:** Cuando `cs_uart_i = 1` y `we_i = 1`, decodifica `addr_i` para determinar
-el registro destino y genera el pulso de escritura correspondiente. Cuando `cs_uart_i = 1` y
-`re_i = 1`, selecciona el dato del registro correspondiente y lo coloca en `rdata_o`. La señal
-`ready_o` se activa en el ciclo siguiente al acceso.
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_rxdata` |
+| Nivel | 4 |
+| Dirección | `0x0001_0048` |
+| Responsabilidad | Almacenar el byte recibido. |
+| Entradas principales | `rx_data[7:0]`, `rx_ready`. |
+| Salidas principales | `rx_data[7:0]` hacia `uart_bus_if`. |
+| Dependencias | `uart_rx`, `uart_bus_if`, `CTRL/STATUS`. |
+| Observaciones | La lectura de este registro genera `rd_rx_data`, usado para limpiar `rx_ready`. |
 
-**Justificación de diseño:** Centralizar la lógica de decodificación de direcciones en un único
-módulo de interfaz simplifica los registros internos y facilita la verificación independiente de
-la lógica de bus frente a la lógica serial.
+#### 4.4.5 Generador de baud rate
 
----
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `baud_gen` |
+| Nivel | 4 |
+| Responsabilidad | Generar pulsos de temporización para 115200 baudios. |
+| Entradas principales | Reloj del sistema de 50 MHz. |
+| Salidas principales | `baud_tick`, `sample_tick`. |
+| Dependencias | `uart_tx`, `uart_rx`. |
+| Observaciones | Usa aproximadamente 434 ciclos de reloj por bit. |
 
-#### 4.4.2 Generador de baud rate
+#### 4.4.6 Transmisor UART
 
-**Nombre:** `baud_gen`
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_tx` |
+| Nivel | 4 |
+| Responsabilidad | Serializar un byte en una trama UART 8N1. |
+| Entradas principales | `tx_data[7:0]`, `tx_start`, `baud_tick`, `tx_enable`. |
+| Salidas principales | `uart_tx_o`, `tx_busy`, `tx_ready`. |
+| Dependencias | `TXDATA`, `baud_gen`, `CTRL/STATUS`. |
+| Observaciones | FSM interna: `IDLE`, `START`, `DATA`, `STOP`. |
 
-**Objetivo:** Generar los pulsos de temporización `baud_tick` y `sample_tick` a partir del reloj
-de sistema de 50 MHz para sincronizar la transmisión y la recepción a 115 200 baudios.
+#### 4.4.7 Receptor UART
 
-**Entradas:**
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `uart_rx` |
+| Nivel | 4 |
+| Responsabilidad | Recibir una trama UART 8N1 y reconstruir el byte. |
+| Entradas principales | `uart_rx_i`, `sample_tick`, `rx_enable`, `clear_flags`. |
+| Salidas principales | `rx_data[7:0]`, `rx_ready`, `rx_error`. |
+| Dependencias | `baud_gen`, `RXDATA`, `CTRL/STATUS`. |
+| Observaciones | FSM interna: `IDLE`, `START`, `DATA`, `STOP`. |
 
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema (50 MHz) |
-| `rst_i` | 1 bit | Reset activo en bajo |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `baud_tick_o` | 1 bit | Pulso de 1 ciclo cada 434 ciclos de reloj; cadencia de un bit UART |
-| `sample_tick_o` | 1 bit | Pulso en el centro del intervalo de bit (≈ 217 ciclos tras el flanco de inicio) |
-
-**Relación con otros módulos:** `baud_tick_o` se conecta a `uart_tx` para controlar el avance
-de la FSM de transmisión. `sample_tick_o` se conecta a `uart_rx` para el muestreo en el centro
-del bit recibido.
-
-**Funcionamiento:** Implementa un contador descendente de 9 bits inicializado en 433 (divisor =
-⌊50 000 000 / 115 200⌋ = 434). Cuando el contador llega a 0, emite `baud_tick_o` por 1 ciclo y
-se recarga. El `sample_tick_o` se genera cuando el mismo contador alcanza 216 (mitad del período).
-
-**Justificación de diseño:** Separar la generación de temporización en un módulo independiente
-permite que TX y RX compartan el mismo divisor sin duplicar lógica, y facilita ajustar la tasa
-de baudios cambiando un único parámetro.
-
----
-
-#### 4.4.3 Transmisor UART
-
-**Nombre:** `uart_tx`
-
-**Objetivo:** Serializar un byte de 8 bits en una trama UART 8N1 (start + 8 datos LSB-first +
-stop) y enviarlo por la línea `uart_tx_o` a la tasa dictada por `baud_tick_i`.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `tx_data_i` | 8 bits | Byte a transmitir |
-| `tx_start_i` | 1 bit | Inicia la transmisión (generado por escritura en `TXDATA`) |
-| `baud_tick_i` | 1 bit | Pulso de cadencia de bit desde `baud_gen` |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `uart_tx_o` | 1 bit | Línea serial de salida |
-| `tx_busy_o` | 1 bit | Activo mientras se transmite una trama |
-| `tx_ready_o` | 1 bit | Activo cuando el transmisor está libre para aceptar un nuevo byte |
-
-**Relación con otros módulos:** Recibe datos de `TXDATA` a través de `tx_data_i` y `tx_start_i`.
-Reporta estado a `CTRL/STATUS` mediante `tx_busy_o` y `tx_ready_o`. Usa el `baud_tick_i` de
-`baud_gen`.
-
-**Funcionamiento:** Implementa la FSM de 4 estados `IDLE → START → DATA → STOP` descrita en
-la sección 4.2. En `IDLE`, mantiene `uart_tx_o = 1` (línea en reposo). Al recibir `tx_start_i`,
-carga `tx_data_i` en un registro de desplazamiento de 8 bits y avanza los estados con cada
-`baud_tick_i`. En `DATA`, desplaza el registro a la derecha y coloca el bit LSB en `uart_tx_o`.
-Al completar los 8 bits, envía el bit de parada (`uart_tx_o = 1`) durante un período de baud y
-regresa a `IDLE`.
-
-**Justificación de diseño:** La serialización LSB-first con un registro de desplazamiento es la
-implementación más directa del estándar UART y minimiza la lógica combinacional en el camino
-crítico de la línea serial.
-
----
-
-#### 4.4.4 Receptor UART
-
-**Nombre:** `uart_rx`
-
-**Objetivo:** Detectar el bit de inicio en la línea `uart_rx_i`, muestrear los 8 bits de datos
-en el centro de cada período de bit usando `sample_tick_i`, verificar el bit de parada y entregar
-el byte reconstruido junto con las señales de estado.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `uart_rx_i` | 1 bit | Línea serial de entrada |
-| `sample_tick_i` | 1 bit | Pulso de muestreo en el centro del bit desde `baud_gen` |
-| `rx_enable_i` | 1 bit | Habilita la recepción (desde `CTRL/STATUS`) |
-| `clear_flags_i` | 1 bit | Limpia `rx_ready` y `rx_error` (desde `CTRL/STATUS`) |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `rx_data_o` | 8 bits | Byte recibido y reconstruido |
-| `rx_ready_o` | 1 bit | Se activa al completar la recepción de una trama válida |
-| `rx_error_o` | 1 bit | Se activa si el bit de parada no es `1` (error de enmarcado) |
-
-**Relación con otros módulos:** Entrega `rx_data_o` al registro `RXDATA`. Reporta `rx_ready_o`
-y `rx_error_o` a `CTRL/STATUS`. Consume `sample_tick_i` de `baud_gen`.
-
-**Funcionamiento:** Implementa la FSM de 5 estados `IDLE → START → DATA → STOP → IDLE`
-descrita en la sección 4.2. La detección del bit de inicio se realiza por flanco descendente en
-`uart_rx_i`. En el estado `START`, `sample_tick_i` verifica que la línea sigue en bajo en el
-centro del bit de inicio, confirmando que no fue un glitch. En `DATA`, captura 8 bits LSB-first
-en un registro de desplazamiento con cada `sample_tick_i`. En `STOP`, verifica que `uart_rx_i = 1`;
-si no lo está, activa `rx_error_o`.
-
-**Justificación de diseño:** El muestreo en el centro del período de bit maximiza el margen de
-ruido y es la técnica estándar para receptores UART asíncronos. Separar el receptor del transmisor
-en módulos independientes permite verificarlos individualmente con testbenches simples.
-
----
 
 ## 5. Periférico PS/2
 
@@ -735,57 +636,31 @@ en módulos independientes permite verificarlos individualmente con testbenches 
 
 ![Diagrama de nivel 3 del periférico PS/2](docs/img/ps2_n3.png)
 
-**Figura 5.1.** Diagrama de nivel 3 del periférico PS/2 con receptor de tramas de 11 bits,
-manejo de prefijos y transmisor de comandos.
+**Figura 5.1.** Diagrama de nivel 3 del periférico PS/2.
 
-El periférico PS/2 se descompone en cuatro bloques principales: la interfaz de bus `ps2_bus_if`,
-el banco de registros mapeados en memoria, la cadena de recepción y el transmisor de comandos.
-Esta organización separa la lógica de bus del protocolo físico PS/2 y permite verificar cada
-bloque de forma independiente.
+El periférico PS/2 se descompone en una interfaz de bus `ps2_bus_if`, un banco de registros mapeados en memoria, una cadena de recepción y un transmisor de comandos. Esta organización separa la comunicación con el bus del sistema, el almacenamiento visible por software y la lógica propia del protocolo PS/2.
 
-El módulo `ps2_bus_if` recibe los accesos del bus de interconexión mediante `addr[31:0]`,
-`wdata[31:0]`, `we`, `re` y `cs_ps2`. Genera operaciones internas de lectura y escritura sobre
-los registros PS/2 y responde al bus con `ps2_rdata[31:0]` y `ps2_ready`.
+El módulo `ps2_bus_if` recibe los accesos provenientes del bus de interconexión mediante `addr[31:0]`, `wdata[31:0]`, `we`, `re` y `cs_ps2`. Genera operaciones internas de lectura/escritura sobre los registros y responde con `ps2_rdata[31:0]` y `ps2_ready`.
 
-Los registros mapeados en memoria son `CTRL/STATUS` en `0x0001_0050`, `RXDATA` en
-`0x0001_0054` y `TXDATA` en `0x0001_0058`. El registro `CTRL/STATUS` expone las banderas de
-estado visibles por software: `rx_ready` (bit 0), `tx_ready` (bit 1), `rx_error` (bit 2),
-`tx_error` (bit 3) y el control `kbd_enable` (bit 4). `RXDATA` almacena el scancode entregado
-por el decodificador; su lectura limpia `rx_ready`. `TXDATA` almacena el comando a enviar al
-teclado; la escritura genera internamente `tx_start` hacia el transmisor.
+Los registros mapeados en memoria son `CTRL/STATUS` en `0x0001_0050`, `RXDATA` en `0x0001_0054` y `TXDATA` en `0x0001_0058`. `CTRL/STATUS` expone `rx_ready`, `tx_ready`, `rx_error`, `tx_error` y `kbd_enable`. `RXDATA` almacena el scancode recibido y `TXDATA` almacena el comando que será enviado al teclado.
 
-La cadena de recepción opera en la frontera del protocolo PS/2. Las señales externas `ps2_clk_i`
-y `ps2_data_i` ingresan primero al sincronizador y detector de flanco, que las sincroniza al
-reloj del sistema y detecta el flanco descendente de `ps2_clk_i`. La FSM de recepción avanza en
-cada flanco descendente detectado, controlando el receptor de trama de 11 bits mediante `bit_shift`
-y `bit_count`. El receptor captura la trama completa: bit de inicio, 8 bits de datos LSB-first,
-bit de paridad impar y bit de parada. El verificador de paridad y stop valida la trama; si es
-correcta, entrega `frame_ok` y `parity_ok` al módulo de manejo de prefijos. Si hay error, activa
-`rx_error` hacia `CTRL/STATUS`. El módulo de manejo de prefijos detecta los bytes `0xF0`
-(break code) y `0xE0` (tecla extendida) y genera las señales internas `is_break` e
-`is_extended`, que son consumidas exclusivamente por el decodificador de scancodes Set 2.
-Estas señales no son visibles en los registros del periférico. El decodificador produce el
-`scancode[7:0]` final y activa `rx_ready` cuando el dato es válido.
-
-El transmisor de comandos PS/2 toma `tx_data[7:0]` y `tx_start` desde `TXDATA`, genera la
-trama de 11 bits correspondiente y controla las líneas externas `ps2_clk_o` y `ps2_data_o`.
-Reporta `tx_ready` y `tx_error` hacia `CTRL/STATUS`.
+La cadena de recepción sincroniza `ps2_clk_i` y `ps2_data_i`, detecta flancos descendentes, captura una trama de 11 bits, verifica paridad impar y stop, procesa prefijos `0xF0`/`0xE0` y entrega el scancode Set 2 final. Las señales `is_break` e `is_extended` son internas entre el manejo de prefijos y el decodificador; no son bits visibles de `CTRL/STATUS`.
 
 **Submódulos representados en el nivel 3:**
 
-| Bloque | Nombre RTL | Función |
-|--------|------------|---------|
-| Interfaz de bus | `ps2_bus_if` | Traduce accesos del bus en operaciones de lectura/escritura sobre los registros PS/2. Genera `ps2_rdata[31:0]` y `ps2_ready`. |
-| Registro de control y estado | `CTRL/STATUS` `0x0001_0050` | Expone `rx_ready`, `tx_ready`, `rx_error`, `tx_error` y `kbd_enable` al software. |
-| Registro de recepción | `RXDATA` `0x0001_0054` | Almacena el scancode final. Su lectura limpia `rx_ready`. |
-| Registro de transmisión | `TXDATA` `0x0001_0058` | Almacena el comando a enviar. La escritura genera `tx_start` internamente. |
-| Sincronizador y detector de flanco | `ps2_sync` | Sincroniza `ps2_clk_i` y `ps2_data_i` al dominio del reloj del sistema y detecta el flanco descendente de `ps2_clk_i`. |
-| FSM de recepción | `ps2_rx_fsm` | Controla la captura de bits mediante los estados `IDLE`, `SHIFT`, `CHECK`, `DONE` y `ERROR`. |
-| Receptor de trama de 11 bits | `ps2_rx_frame` | Captura los 11 bits del protocolo PS/2 (start, 8 datos LSB-first, paridad, stop) en cada flanco detectado. |
-| Verificador de paridad y stop | `ps2_parity_chk` | Verifica paridad impar y que el bit de parada sea `1`. Genera `frame_ok`, `parity_ok` y `rx_error`. |
-| Manejo de prefijos | `ps2_prefix` | Detecta los bytes `0xF0` y `0xE0`. Genera las señales internas `is_break` e `is_extended` hacia el decodificador. |
-| Decodificador de scancodes Set 2 | `ps2_decoder` | Consume `rx_byte[7:0]`, `is_break` e `is_extended` para producir `scancode[7:0]` y activar `rx_ready`. |
-| Transmisor de comandos PS/2 | `ps2_tx` | Genera la trama PS/2 de 11 bits para enviar comandos al teclado. Controla `ps2_clk_o` y `ps2_data_o`. Reporta `tx_ready` y `tx_error`. |
+| Bloque | Nombre lógico | Función |
+|--------|---------------|---------|
+| Interfaz de bus | `ps2_bus_if` | Traduce accesos del bus en operaciones de lectura/escritura sobre registros PS/2. |
+| Registro de control/estado | `CTRL/STATUS` | Expone `rx_ready`, `tx_ready`, `rx_error`, `tx_error` y `kbd_enable`. |
+| Registro de recepción | `RXDATA` | Almacena `scancode[7:0]`. |
+| Registro de transmisión | `TXDATA` | Almacena el comando y genera `tx_start`. |
+| Sincronizador/detector de flanco | `ps2_sync` | Sincroniza `ps2_clk_i` y `ps2_data_i`; detecta `fall_edge`. |
+| FSM de recepción | `ps2_rx_fsm` | Controla la captura de los 11 bits. |
+| Receptor de trama | `ps2_rx_frame` | Captura `start · 8 data · parity · stop`. |
+| Verificador de paridad | `ps2_parity_chk` | Valida paridad impar y stop. |
+| Manejo de prefijos | `ps2_prefix` | Detecta `0xF0` y `0xE0`. |
+| Decodificador Set 2 | `ps2_decoder` | Produce `scancode[7:0]` y `rx_ready`. |
+| Transmisor de comandos | `ps2_tx` | Envía comandos host-a-teclado y espera ACK. |
 
 **Conexiones principales del nivel 3:**
 
@@ -797,7 +672,7 @@ Reporta `tx_ready` y `tx_error` hacia `CTRL/STATUS`.
 | `ps2_bus_if` | `TXDATA` | `wr_tx_data[7:0]` |
 | `RXDATA` | `ps2_bus_if` | `rd_rx_data[7:0]` |
 | `CTRL/STATUS` | `ps2_rx_fsm` | `kbd_enable`, `clear_flags` |
-| Señal externa | `ps2_sync` | `ps2_clk_i`, `ps2_data_i` |
+| Señales externas | `ps2_sync` | `ps2_clk_i`, `ps2_data_i` |
 | `ps2_sync` | `ps2_rx_fsm` | `fall_edge`, `ps2_data_sync` |
 | `ps2_rx_fsm` | `ps2_rx_frame` | `bit_shift`, `bit_count` |
 | `ps2_rx_frame` | `ps2_parity_chk` | `frame[10:0]`, `rx_byte[7:0]` |
@@ -808,399 +683,198 @@ Reporta `tx_ready` y `tx_error` hacia `CTRL/STATUS`.
 | `ps2_decoder` | `CTRL/STATUS` | `rx_ready` |
 | `TXDATA` | `ps2_tx` | `tx_data[7:0]`, `tx_start` |
 | `ps2_tx` | `CTRL/STATUS` | `tx_ready`, `tx_error` |
-| `ps2_tx` | Señal externa | `ps2_clk_o` (`ps2_clk_drive`) |
-| `ps2_tx` | Señal externa | `ps2_data_o` (`ps2_data_drive`) |
+| `ps2_tx` | Señales externas | `ps2_clk_o`, `ps2_data_o` |
 
 ---
 
 ### 5.2 FSM de recepción PS/2
 
-La FSM del receptor PS/2 avanza en cada flanco descendente de `ps2_clk_i` detectado por el
-sincronizador. Los estados capturan los 11 bits del protocolo en orden LSB-first y verifican la
-validez de la trama al final.
-
 | Estado | Descripción | Condición de salida | Próximo estado | Señales activas |
 |--------|-------------|---------------------|----------------|-----------------|
-| `IDLE` | Espera el flanco descendente que indica el bit de inicio | `fall_edge = 1` y `ps2_data_sync = 0` | `SHIFT` | `bit_count = 0` |
-| `IDLE` | Flanco detectado pero línea de datos no está en bajo | `fall_edge = 1` y `ps2_data_sync = 1` | `IDLE` | descarta el flanco (glitch) |
-| `SHIFT` | Captura 8 bits de datos y el bit de paridad (9 flancos en total) | `fall_edge = 1` y `bit_count < 9` | `SHIFT` | `bit_shift = 1`, incrementa `bit_count` |
-| `SHIFT` | Se completó la captura del noveno bit (paridad) | `fall_edge = 1` y `bit_count = 9` | `CHECK` | `bit_shift = 1` |
-| `CHECK` | Evalúa el bit de parada: debe ser `1` | `ps2_data_sync = 1` | `DONE` | `frame_ok` si paridad válida |
-| `CHECK` | Bit de parada incorrecto | `ps2_data_sync = 0` | `ERROR` | `rx_error = 1` |
-| `DONE` | Trama válida recibida; se entrega a la cadena de decodificación | siempre | `IDLE` | `rx_ready` (vía decodificador) |
-| `ERROR` | Error de enmarcado o paridad; se descarta la trama | siempre | `IDLE` | `rx_error = 1` hacia `CTRL/STATUS` |
+| `IDLE` | Espera el bit de inicio | `fall_edge = 1` y `ps2_data_sync = 0` | `SHIFT` | Reinicia `bit_count` |
+| `IDLE` | Flanco no válido | `fall_edge = 1` y `ps2_data_sync = 1` | `IDLE` | Descarta glitch |
+| `SHIFT` | Captura bits de datos y paridad | `fall_edge = 1` y `bit_count < 9` | `SHIFT` | `bit_shift = 1` |
+| `SHIFT` | Captura completa de datos/paridad | `fall_edge = 1` y `bit_count = 9` | `CHECK` | `bit_shift = 1` |
+| `CHECK` | Evalúa stop y paridad | Stop/paridad válidos | `DONE` | `frame_ok = 1` |
+| `CHECK` | Error de trama | Stop/paridad inválidos | `ERROR` | `rx_error = 1` |
+| `DONE` | Entrega byte a prefijos/decodificador | Siempre | `IDLE` | `rx_ready` vía decodificador |
+| `ERROR` | Descarta trama | Siempre | `IDLE` | `rx_error = 1` |
 
 #### Manejo de prefijos `0xF0` y `0xE0`
 
-Cuando el decodificador recibe el byte `0xF0`, activa internamente `is_break` y espera el
-siguiente scancode para producir el código de liberación de tecla. Cuando recibe `0xE0`, activa
-`is_extended` y espera el siguiente byte para producir el scancode de una tecla extendida. Ambas
-señales son internas al bloque `ps2_prefix` → `ps2_decoder` y no se exponen en `CTRL/STATUS`
-ni en `RXDATA` de forma independiente: el software solo lee el scancode final resultante.
+Cuando se recibe `0xF0`, el bloque de prefijos activa internamente `is_break` para indicar que el siguiente scancode corresponde a liberación de tecla. Cuando se recibe `0xE0`, activa `is_extended` para indicar una tecla extendida. Ambas señales son internas al camino `ps2_prefix` → `ps2_decoder` y no se exponen como bits de `CTRL/STATUS`.
 
 ---
 
 ### 5.3 Tabla de interfaz de puertos
 
-La siguiente tabla describe la interfaz del periférico PS/2 completo tal como es vista desde el
-bus de interconexión y desde las señales físicas de la FPGA.
-
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
-| `clk_i` | Entrada | 1 bit | Reloj del sistema (50 MHz) |
-| `rst_i` | Entrada | 1 bit | Reset activo en bajo |
-| `addr_i` | Entrada | 32 bits | Dirección del registro accedido en el espacio de periféricos |
-| `wdata_i` | Entrada | 32 bits | Dato de escritura desde el bus |
-| `we_i` | Entrada | 1 bit | Habilitación de escritura |
-| `re_i` | Entrada | 1 bit | Habilitación de lectura |
-| `cs_ps2_i` | Entrada | 1 bit | Chip select: selecciona este periférico |
-| `rdata_o` | Salida | 32 bits | Dato de lectura hacia el bus |
-| `ready_o` | Salida | 1 bit | Indica que la respuesta del periférico es válida |
-| `ps2_clk_i` | Entrada | 1 bit | Línea de reloj PS/2 desde el teclado |
-| `ps2_data_i` | Entrada | 1 bit | Línea de datos PS/2 desde el teclado |
-| `ps2_clk_o` | Salida | 1 bit | Línea de reloj PS/2 controlada por el MCU durante transmisión |
-| `ps2_data_o` | Salida | 1 bit | Línea de datos PS/2 controlada por el MCU durante transmisión |
+| `clk_i` | Entrada | 1 bit | Reloj del sistema. |
+| `rst_i` | Entrada | 1 bit | Reset activo en bajo. |
+| `addr_i` | Entrada | 32 bits | Dirección del registro accedido. |
+| `wdata_i` | Entrada | 32 bits | Dato de escritura desde el bus. |
+| `we_i` | Entrada | 1 bit | Habilitación de escritura. |
+| `re_i` | Entrada | 1 bit | Habilitación de lectura. |
+| `cs_ps2_i` | Entrada | 1 bit | Chip select del periférico PS/2. |
+| `ps2_rdata_o` | Salida | 32 bits | Dato de lectura hacia el bus. |
+| `ps2_ready_o` | Salida | 1 bit | Respuesta válida del periférico. |
+| `ps2_clk_i` | Entrada | 1 bit | Reloj PS/2 desde teclado. |
+| `ps2_data_i` | Entrada | 1 bit | Datos PS/2 desde teclado. |
+| `ps2_clk_o` | Salida | 1 bit | Control de reloj PS/2 durante transmisión. |
+| `ps2_data_o` | Salida | 1 bit | Control de datos PS/2 durante transmisión. |
 
-> **Nota de implementación:** Las líneas `ps2_clk` y `ps2_data` son bidireccionales en el
-> estándar PS/2. En la FPGA se implementan como pares entrada/salida separados con lógica de
-> habilitación de salida; la línea física se controla mediante un buffer triestado o asignación
-> de pin bidireccional en Quartus.
+> **Nota de implementación:** Las líneas físicas `ps2_clk` y `ps2_data` son bidireccionales. En FPGA pueden modelarse como pares entrada/salida más lógica de habilitación o mediante buffers triestado según la integración de pines.
 
 ---
 
 ### 5.4 Nivel 4 — Fichas de módulos del PS/2
 
+El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en memoria y un núcleo PS/2 encargado de recibir scancodes Set 2 y transmitir comandos al teclado.
+
 #### 5.4.1 Interfaz de bus PS/2
 
-**Nombre:** `ps2_bus_if`
-
-**Objetivo:** Traducir los accesos de lectura y escritura del bus del sistema en operaciones
-internas sobre los registros `CTRL/STATUS`, `RXDATA` y `TXDATA`, y generar la respuesta
-`ps2_rdata[31:0]` y `ps2_ready` hacia el bus.
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_bus_if` |
+| Nivel | 4 |
+| Responsabilidad | Traducir accesos del bus hacia operaciones de lectura/escritura sobre registros PS/2. |
+| Entradas principales | `addr[31:0]`, `wdata[31:0]`, `we`, `re`, `cs_ps2`, `status[31:0]`, `rx_data[7:0]` |
+| Salidas principales | `ps2_rdata[31:0]`, `ps2_ready`, `wr_ctrl`, `rd_status`, `wr_tx_data[7:0]`, `rd_rx_data` |
+| Dependencias | Bus e interconexión, `CTRL/STATUS`, `RXDATA`, `TXDATA`. |
+| Observaciones | Decodifica `0x0001_0050`, `0x0001_0054` y `0x0001_0058`. |
+
+#### 5.4.2 Registro CTRL/STATUS del PS/2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_ctrl_status` |
+| Nivel | 4 |
+| Dirección | `0x0001_0050` |
+| Responsabilidad | Almacenar banderas de estado y el bit de habilitación del teclado. |
+| Entradas principales | `wr_ctrl`, `wdata[31:0]`, `rx_ready`, `tx_ready`, `rx_error`, `tx_error`, `rd_rx_data`. |
+| Salidas principales | `status[31:0]`, `kbd_enable`, `clear_flags`. |
+| Dependencias | `ps2_bus_if`, receptor PS/2, transmisor PS/2. |
+| Observaciones | `is_break` e `is_extended` son señales internas y no forman parte de este registro. |
+
+| Bit | Señal | Tipo | Descripción |
+|-----|-------|------|-------------|
+| 0 | `rx_ready` | RO | Scancode disponible en `RXDATA`. |
+| 1 | `tx_ready` | RO | Transmisor disponible. |
+| 2 | `rx_error` | RO | Error de paridad o enmarcado. |
+| 3 | `tx_error` | RO | Error de transmisión o ausencia de ACK. |
+| 4 | `kbd_enable` | R/W | Habilita recepción del teclado. |
+
+#### 5.4.3 Registro RXDATA del PS/2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_rxdata` |
+| Nivel | 4 |
+| Dirección | `0x0001_0054` |
+| Responsabilidad | Almacenar el scancode válido entregado por el decodificador. |
+| Entradas principales | `scancode[7:0]`, `rx_ready`. |
+| Salidas principales | `rx_data[7:0]` hacia `ps2_bus_if`. |
+| Dependencias | `ps2_decoder`, `ps2_bus_if`, `CTRL/STATUS`. |
+| Observaciones | La lectura limpia `rx_ready` mediante `rd_rx_data`. |
+
+#### 5.4.4 Registro TXDATA del PS/2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_txdata` |
+| Nivel | 4 |
+| Dirección | `0x0001_0058` |
+| Responsabilidad | Almacenar el comando a enviar al teclado. |
+| Entradas principales | `wr_tx_data[7:0]`, pulso de escritura desde `ps2_bus_if`. |
+| Salidas principales | `tx_data[7:0]`, `tx_start`. |
+| Dependencias | `ps2_bus_if`, `ps2_tx`. |
+| Observaciones | El firmware debe consultar `tx_ready` antes de escribir un nuevo comando. |
+
+#### 5.4.5 Sincronizador y detector de flanco
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_sync` |
+| Nivel | 4 |
+| Responsabilidad | Sincronizar `ps2_clk_i` y `ps2_data_i` y detectar flanco descendente. |
+| Entradas principales | `ps2_clk_i`, `ps2_data_i`. |
+| Salidas principales | `ps2_clk_sync`, `ps2_data_sync`, `fall_edge`. |
+| Dependencias | FSM de recepción, receptor de trama y transmisor PS/2. |
+| Observaciones | El flanco descendente marca el instante de captura de cada bit recibido. |
+
+#### 5.4.6 FSM de recepción PS/2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_rx_fsm` |
+| Nivel | 4 |
+| Responsabilidad | Controlar la captura de los 11 bits de la trama PS/2. |
+| Entradas principales | `fall_edge`, `ps2_data_sync`, `kbd_enable`, `clear_flags`. |
+| Salidas principales | `bit_shift`, `bit_count`, `frame_done`, `rx_error`. |
+| Dependencias | `ps2_sync`, `ps2_rx_frame`, `CTRL/STATUS`. |
+| Observaciones | Permanece en `IDLE` si `kbd_enable = 0`. |
+
+#### 5.4.7 Receptor de trama de 11 bits
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_rx_frame` |
+| Nivel | 4 |
+| Responsabilidad | Capturar la trama PS/2 completa. |
+| Entradas principales | `bit_shift`, `ps2_data_sync`. |
+| Salidas principales | `frame[10:0]`, `rx_byte[7:0]`. |
+| Dependencias | FSM de recepción, verificador de paridad. |
+| Observaciones | Trama: start, 8 datos LSB-first, paridad impar y stop. |
+
+#### 5.4.8 Verificador de paridad y stop
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_parity_chk` |
+| Nivel | 4 |
+| Responsabilidad | Validar paridad impar y bit de parada. |
+| Entradas principales | `frame[10:0]`, `rx_byte[7:0]`, `frame_done`. |
+| Salidas principales | `frame_ok`, `parity_ok`, `rx_error`, `rx_byte[7:0]`. |
+| Dependencias | Receptor de trama, manejo de prefijos, `CTRL/STATUS`. |
+| Observaciones | Si paridad o stop fallan, se activa `rx_error`. |
+
+#### 5.4.9 Manejo de prefijos 0xF0 / 0xE0
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_prefix` |
+| Nivel | 4 |
+| Responsabilidad | Detectar prefijos y generar señales internas de contexto. |
+| Entradas principales | `frame_ok`, `rx_byte[7:0]`. |
+| Salidas principales | `rx_byte[7:0]`, `is_break`, `is_extended`, `data_valid`. |
+| Dependencias | Verificador de paridad, decodificador de scancodes. |
+| Observaciones | `is_break` e `is_extended` no se exponen en `CTRL/STATUS`. |
+
+#### 5.4.10 Decodificador de scancodes Set 2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_decoder` |
+| Nivel | 4 |
+| Responsabilidad | Interpretar el scancode Set 2 y entregarlo a `RXDATA`. |
+| Entradas principales | `data_valid`, `rx_byte[7:0]`, `is_break`, `is_extended`, `kbd_enable`. |
+| Salidas principales | `scancode[7:0]`, `rx_ready`. |
+| Dependencias | `ps2_prefix`, `RXDATA`, `CTRL/STATUS`. |
+| Observaciones | Usa internamente los prefijos para interpretar el evento de teclado. |
+
+#### 5.4.11 Transmisor de comandos PS/2
+
+| Campo | Descripción |
+|-------|-------------|
+| Nombre lógico | `ps2_tx` |
+| Nivel | 4 |
+| Responsabilidad | Enviar comandos desde el microcontrolador al teclado PS/2. |
+| Entradas principales | `tx_data[7:0]`, `tx_start`, `ps2_clk_sync`, `ps2_data_sync`. |
+| Salidas principales | `ps2_clk_drive`, `ps2_data_drive`, `tx_ready`, `tx_error`. |
+| Dependencias | `TXDATA`, `CTRL/STATUS`, `ps2_sync`. |
+| Observaciones | Implementa transmisión host-a-dispositivo y espera ACK. |
 
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `addr_i` | 32 bits | Dirección del registro accedido |
-| `wdata_i` | 32 bits | Dato de escritura desde el bus |
-| `we_i` | 1 bit | Habilitación de escritura |
-| `re_i` | 1 bit | Habilitación de lectura |
-| `cs_ps2_i` | 1 bit | Chip select |
-| `status_i` | 32 bits | Valor actual de `CTRL/STATUS` para lectura |
-| `rx_data_i` | 8 bits | Scancode disponible en `RXDATA` para lectura |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `rdata_o` | 32 bits | Dato leído, multiplexado según la dirección |
-| `ready_o` | 1 bit | Respuesta válida al bus |
-| `wr_ctrl_o` | 1 bit | Pulso de escritura hacia `CTRL/STATUS` |
-| `rd_status_o` | 1 bit | Pulso de lectura de `CTRL/STATUS` |
-| `wr_tx_data_o` | 8 bits | Byte a escribir en `TXDATA` |
-| `rd_rx_data_o` | 1 bit | Pulso de lectura de `RXDATA` (limpia `rx_ready`) |
-
-**Relación con otros módulos:** Es el único punto de contacto entre el bus de interconexión y
-los registros internos del periférico PS/2.
-
-**Funcionamiento:** Decodifica `addr_i` comparándola con las direcciones `0x0001_0050`,
-`0x0001_0054` y `0x0001_0058`. En escritura, genera el pulso al registro destino correspondiente.
-En lectura, multiplexea el contenido de `CTRL/STATUS` o `RXDATA` en `rdata_o` según la
-dirección. La lectura de `RXDATA` genera adicionalmente `rd_rx_data_o` para limpiar `rx_ready`.
-
-**Justificación de diseño:** Igual que en UART, concentrar la decodificación de direcciones en
-un módulo de interfaz dedicado aísla la lógica del protocolo físico PS/2 de los detalles del
-bus, simplificando ambos bloques y sus testbenches.
-
----
-
-#### 5.4.2 Sincronizador y detector de flanco
-
-**Nombre:** `ps2_sync`
-
-**Objetivo:** Sincronizar las señales asíncronas `ps2_clk_i` y `ps2_data_i` al dominio del reloj
-del sistema para evitar metaestabilidad, y detectar el flanco descendente de `ps2_clk_i` que
-marca la captura de cada bit.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `ps2_clk_i` | 1 bit | Línea de reloj PS/2 (asíncrona) |
-| `ps2_data_i` | 1 bit | Línea de datos PS/2 (asíncrona) |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `ps2_clk_sync_o` | 1 bit | Reloj PS/2 sincronizado al dominio del sistema |
-| `ps2_data_sync_o` | 1 bit | Datos PS/2 sincronizados al dominio del sistema |
-| `fall_edge_o` | 1 bit | Pulso de 1 ciclo que indica el flanco descendente de `ps2_clk` |
-
-**Relación con otros módulos:** `fall_edge_o` y `ps2_data_sync_o` se conectan directamente a
-la FSM de recepción `ps2_rx_fsm`.
-
-**Funcionamiento:** Implementa un doble registro de sincronización (flip-flop de dos etapas)
-para cada señal de entrada. El flanco descendente se detecta comparando el valor actual del
-registro sincronizado con el del ciclo anterior: `fall_edge = clk_prev & ~clk_sync`.
-
-**Justificación de diseño:** El teclado PS/2 opera con su propio oscilador independiente
-(típicamente entre 10 kHz y 16.7 kHz). Sin sincronización, el muestreo directo de estas señales
-en el dominio de 50 MHz produciría metaestabilidad. El doble registro reduce la probabilidad de
-falla a niveles aceptables para síntesis en FPGA.
-
----
-
-#### 5.4.3 FSM de recepción PS/2
-
-**Nombre:** `ps2_rx_fsm`
-
-**Objetivo:** Controlar la secuencia de captura de los 11 bits de la trama PS/2 avanzando por
-los estados `IDLE`, `SHIFT`, `CHECK`, `DONE` y `ERROR` en respuesta a los flancos descendentes
-detectados por el sincronizador.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `fall_edge_i` | 1 bit | Flanco descendente detectado de `ps2_clk` |
-| `ps2_data_sync_i` | 1 bit | Dato sincronizado al momento del flanco |
-| `kbd_enable_i` | 1 bit | Habilita la recepción (desde `CTRL/STATUS`) |
-| `clear_flags_i` | 1 bit | Reinicia la FSM a `IDLE` |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `bit_shift_o` | 1 bit | Pulso que ordena al receptor de trama capturar el bit actual |
-| `bit_count_o` | 4 bits | Número del bit que se está capturando (0–10) |
-| `frame_done_o` | 1 bit | La trama de 11 bits está completa y lista para verificación |
-| `rx_error_o` | 1 bit | Error de enmarcado detectado (bit de parada incorrecto) |
-
-**Relación con otros módulos:** Controla al receptor de trama `ps2_rx_frame`. Recibe habilitación
-desde `CTRL/STATUS` y reporta `rx_error` de vuelta a `CTRL/STATUS`.
-
-**Funcionamiento:** Descrito en la tabla de la sección 5.2. La transición `IDLE → SHIFT`
-requiere que `fall_edge_i = 1` y que `ps2_data_sync_i = 0` para confirmar el bit de inicio
-válido. La transición `CHECK → DONE` o `CHECK → ERROR` evalúa el bit de parada al décimo
-flanco.
-
-**Justificación de diseño:** Usar una FSM explícita en lugar de un contador monolítico permite
-tratar el estado `ERROR` como un estado diferenciado, facilita la inserción de lógica de
-recuperación (timeout) y hace el diseño verificable por inspección de la tabla de estados.
-
----
-
-#### 5.4.4 Receptor de trama de 11 bits
-
-**Nombre:** `ps2_rx_frame`
-
-**Objetivo:** Capturar los 11 bits de la trama PS/2 en un registro de desplazamiento a medida
-que la FSM de recepción los habilita, y entregar la trama completa al verificador.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `bit_shift_i` | 1 bit | Pulso de captura del bit actual (desde la FSM) |
-| `ps2_data_sync_i` | 1 bit | Bit de dato sincronizado |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `frame_o` | 11 bits | Trama completa: `{stop, parity, data[7:0], start}` |
-| `rx_byte_o` | 8 bits | Extracción directa de los 8 bits de datos (`frame[8:1]`) |
-
-**Relación con otros módulos:** Alimentado por la FSM `ps2_rx_fsm`. Su salida `rx_byte_o` y
-`frame_o` se entregan al verificador `ps2_parity_chk`.
-
-**Funcionamiento:** En cada pulso `bit_shift_i`, desplaza el registro hacia la derecha e ingresa
-`ps2_data_sync_i` por el bit más significativo. Al completar los 11 flancos, el registro contiene
-la trama completa en el orden en que fue recibida (LSB del byte de datos en la posición de bit 1).
-
-**Justificación de diseño:** Un registro de desplazamiento de entrada serial es la implementación
-más directa y eficiente en recursos para capturar protocolos síncronos de velocidad baja como
-PS/2.
-
----
-
-#### 5.4.5 Verificador de paridad y stop
-
-**Nombre:** `ps2_parity_chk`
-
-**Objetivo:** Verificar que la trama recibida cumpla con paridad impar sobre los 8 bits de datos
-y que el bit de parada sea `1`, y generar las señales de validez o error correspondientes.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `frame_i` | 11 bits | Trama completa desde el receptor de trama |
-| `rx_byte_i` | 8 bits | Byte de datos extraído de la trama |
-| `frame_done_i` | 1 bit | Indica que la trama está lista para verificación |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `frame_ok_o` | 1 bit | La trama es válida: paridad correcta y bit de parada en `1` |
-| `parity_ok_o` | 1 bit | El bit de paridad cumple la condición de paridad impar |
-| `rx_error_o` | 1 bit | Error de paridad o de bit de parada |
-| `rx_byte_o` | 8 bits | Byte de datos validado, entregado al módulo de prefijos |
-
-**Relación con otros módulos:** Recibe de `ps2_rx_frame`. Entrega `frame_ok` y `rx_byte` al
-módulo `ps2_prefix`. Entrega `rx_error` a `CTRL/STATUS`.
-
-**Funcionamiento:** La paridad impar se verifica como `^(frame[8:1]) == frame[9]` (XOR de los 8
-bits de datos debe ser igual al bit de paridad). El bit de parada se verifica como
-`frame[10] == 1`. Si ambas condiciones se cumplen cuando `frame_done_i = 1`, se activa
-`frame_ok_o`; en caso contrario se activa `rx_error_o`.
-
-**Justificación de diseño:** Separar la verificación en un módulo dedicado permite sustituirla
-o deshabilitarla independientemente sin modificar la FSM ni el receptor de trama, lo que
-simplifica las pruebas de integración.
-
----
-
-#### 5.4.6 Manejo de prefijos
-
-**Nombre:** `ps2_prefix`
-
-**Objetivo:** Detectar los bytes de prefijo `0xF0` (break code) y `0xE0` (tecla extendida) del
-Set 2 de PS/2, y generar las señales internas `is_break` e `is_extended` para que el
-decodificador interprete correctamente el byte siguiente.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `frame_ok_i` | 1 bit | Trama válida disponible desde el verificador |
-| `rx_byte_i` | 8 bits | Byte validado desde el verificador |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `rx_byte_o` | 8 bits | Byte de dato (no prefijo) hacia el decodificador |
-| `is_break_o` | 1 bit | Señal interna: el byte siguiente es un código de liberación |
-| `is_extended_o` | 1 bit | Señal interna: el byte siguiente corresponde a una tecla extendida |
-| `data_valid_o` | 1 bit | El byte actual es un scancode real (no un prefijo) y debe decodificarse |
-
-**Relación con otros módulos:** Recibe de `ps2_parity_chk`. Sus salidas `is_break_o`,
-`is_extended_o` y `rx_byte_o` se consumen únicamente por `ps2_decoder`. Las señales `is_break`
-e `is_extended` no son visibles en `CTRL/STATUS` ni en ningún registro accesible por software.
-
-**Funcionamiento:** Mantiene dos flags internos `pending_break` y `pending_extended`. Cuando
-`frame_ok_i = 1` y `rx_byte_i = 0xF0`, activa `pending_break` y no genera `data_valid_o`. Cuando
-`rx_byte_i = 0xE0`, activa `pending_extended`. En cualquier otro byte, transfiere `rx_byte_i` al
-decodificador con `data_valid_o = 1` junto con el estado actual de los flags, y los limpia.
-
-**Justificación de diseño:** Encapsular el manejo de prefijos en un módulo separado del
-decodificador simplifica la lógica de decodificación y hace explícito el contrato de interfaz:
-el decodificador nunca ve bytes `0xF0` ni `0xE0`, solo scancodes reales acompañados de sus
-metadatos de contexto.
-
----
-
-#### 5.4.7 Decodificador de scancodes Set 2
-
-**Nombre:** `ps2_decoder`
-
-**Objetivo:** Convertir el byte de scancode Set 2 recibido junto con los metadatos `is_break` e
-`is_extended` en el valor final de scancode almacenado en `RXDATA`, y activar `rx_ready` para
-notificar al software.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `data_valid_i` | 1 bit | Byte de scancode disponible desde el módulo de prefijos |
-| `rx_byte_i` | 8 bits | Byte de scancode (sin prefijos) |
-| `is_break_i` | 1 bit | El evento es una liberación de tecla |
-| `is_extended_i` | 1 bit | El scancode corresponde a una tecla extendida |
-| `kbd_enable_i` | 1 bit | Habilita la entrega de scancodes al banco de registros |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `scancode_o` | 8 bits | Scancode final hacia `RXDATA` |
-| `rx_ready_o` | 1 bit | Scancode válido disponible para lectura por el software |
-
-**Relación con otros módulos:** Recibe de `ps2_prefix`. Entrega `scancode_o` a `RXDATA` y
-`rx_ready_o` a `CTRL/STATUS`.
-
-**Funcionamiento:** Cuando `data_valid_i = 1` y `kbd_enable_i = 1`, escribe `rx_byte_i` en el
-registro de salida y activa `rx_ready_o`. La información de `is_break_i` e `is_extended_i` puede
-utilizarse para enriquecer el scancode (por ejemplo, usando el bit 7 para indicar break) según
-la decisión de implementación del firmware. `rx_ready_o` se mantiene activo hasta que el
-software lee `RXDATA`, momento en el que `ps2_bus_if` genera el pulso `rd_rx_data` que lo limpia.
-
-**Justificación de diseño:** El firmware del editor de texto opera directamente sobre scancodes
-Set 2 para distinguir entre pulsación y liberación de tecla. Entregar el scancode sin traducir
-a código ASCII delega esa responsabilidad al firmware en ensamblador, donde la lógica es más
-flexible y no requiere modificar el hardware para ampliar el soporte de teclas.
-
----
-
-#### 5.4.8 Transmisor de comandos PS/2
-
-**Nombre:** `ps2_tx`
-
-**Objetivo:** Enviar un byte de comando desde el microcontrolador hacia el teclado PS/2 siguiendo
-el protocolo de transmisión host-a-dispositivo: inhibición del reloj, envío de los 11 bits de la
-trama y espera del ACK del teclado.
-
-**Entradas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `clk_i` | 1 bit | Reloj del sistema |
-| `rst_i` | 1 bit | Reset activo en bajo |
-| `tx_data_i` | 8 bits | Comando a enviar al teclado |
-| `tx_start_i` | 1 bit | Inicia la transmisión (generado por escritura en `TXDATA`) |
-| `ps2_clk_sync_i` | 1 bit | Reloj PS/2 sincronizado, para detectar flancos durante la transmisión |
-| `ps2_data_sync_i` | 1 bit | Datos PS/2 sincronizados, para recibir el ACK del teclado |
-
-**Salidas:**
-
-| Puerto | Ancho | Función |
-|--------|-------|---------|
-| `ps2_clk_drive_o` | 1 bit | Controla la línea `ps2_clk_o` (bajo = inhibición del reloj) |
-| `ps2_data_drive_o` | 1 bit | Controla la línea `ps2_data_o` durante la transmisión |
-| `tx_ready_o` | 1 bit | Transmisor libre para aceptar un nuevo comando |
-| `tx_error_o` | 1 bit | Error de transmisión: timeout o NACK del teclado |
-
-**Relación con otros módulos:** Recibe el dato y la orden de inicio desde `TXDATA`. Reporta
-estado a `CTRL/STATUS`. Controla directamente las líneas físicas `ps2_clk_o` y `ps2_data_o`.
-
-**Funcionamiento:** Para iniciar la transmisión, el host debe inhibir el reloj llevando
-`ps2_clk_drive_o = 0` durante al menos 100 µs, luego liberar el reloj y enviar los 11 bits
-(start=0, 8 datos LSB-first, paridad impar, stop=1) en los flancos descendentes generados por
-el teclado. Finalmente, el teclado responde con un bit de ACK en bajo. Si el ACK no se recibe
-dentro del timeout, se activa `tx_error_o`.
-
-**Justificación de diseño:** La transmisión host-a-dispositivo en PS/2 requiere que el host
-tome control del reloj, lo que implica una lógica de inhibición y temporización distinta a la
-recepción. Separar el transmisor en su propio módulo evita que esta lógica interfiera con la
-cadena de recepción, que opera de forma completamente independiente durante la operación normal
-del teclado.
-
----
 
 ## 6. Periférico Timer
 
