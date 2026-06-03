@@ -173,9 +173,50 @@
 
 ### 3.2 Ruta de datos (datapath)
 
-<!-- Inserta la imagen: docs/img/cpu_datapath.png -->
+![Diagrama modular del datapath - Vista general](image.png)
+![Diagrama del datapath - Instrucciones tipo R](image-1.png)
+![Diagrama del datapath - Instrucciones Load/Store](image-2.png)
+![Diagrama del datapath - Instrucciones Branch](image-3.png)
+![Diagrama del datapath - Instrucciones Jump](image-4.png)
 
-<!-- Describe el flujo de señales para al menos 3 tipos de instrucción: tipo-R, load/store, branch -->
+**Objetivo:** Interconectar los bloques funcionales del CPU monociclo (PC, banco de registros, ALU, memoria de instrucciones/datos, extensión de signo y multiplexores de selección) para ejecutar el conjunto de instrucciones RV32I en un único ciclo de reloj.
+
+**Entradas:**
+
+| Señal | Origen | Función |
+|-------|--------|---------|
+| `clk_i` | Sistema | Reloj del sistema (50 MHz) |
+| `rst_i` | Sistema | Reset activo en bajo |
+| `RegWrite` | Unidad de control | Habilita escritura en el banco de registros |
+| `ALUSrc` | Unidad de control | Selecciona operando B de la ALU (registro o inmediato) |
+| `ResultSrc[1:0]` | Unidad de control | Selecciona la fuente del dato a escribir en `rd` |
+| `MemRead` | Unidad de control | Habilita lectura de la memoria de datos |
+| `MemWrite` | Unidad de control | Habilita escritura en la memoria de datos |
+| `ALUControl[3:0]` | Unidad de control | Selecciona la operación de la ALU |
+| `ImmSrc[2:0]` | Unidad de control | Selecciona el formato de inmediato para el bloque Extend |
+| `PCNextSrc[1:0]` | Unidad de control | Selecciona la fuente del próximo PC |
+| `instr[31:0]` | Memoria de instrucciones | Instrucción actual a ejecutar |
+
+**Salidas:**
+
+| Señal | Destino | Función |
+|-------|---------|---------|
+| `alu_zero` | Unidad de control | Indica que el resultado de la ALU es cero (usado en `beq`, `bne`) |
+| `alu_lt_signed` | Unidad de control | Indica comparación menor-que con signo (usado en `blt`, `bge`) |
+| `PC[31:0]` | Memoria de instrucciones | Dirección de la instrucción actual |
+| `alu_result[31:0]` | Bus de datos / Memoria de datos | Dirección efectiva para loads y stores |
+| `wdata[31:0]` | Memoria de datos | Dato a escribir en instrucciones store |
+
+**Explicación general:**
+
+El datapath monociclo ejecuta cada instrucción RV32I en un único ciclo de reloj. El PC entrega la dirección a la memoria de instrucciones, que devuelve la instrucción de 32 bits. El decodificador extrae los campos `rs1`, `rs2`, `rd`, `opcode`, `funct3` y `funct7`. El bloque `Extend` produce el inmediato con signo extendido según `ImmSrc`. El banco de registros entrega los valores de `rs1` y `rs2`. Un MUX selecciona entre `rs2` o el inmediato como segundo operando de la ALU. La ALU calcula el resultado y activa las banderas `zero` y `lt_signed`. Para loads, el resultado es la dirección de lectura en memoria de datos. El MUX `ResultSrc` selecciona entre resultado de ALU, dato leído de memoria o `PC+4` como valor a escribir en `rd`. El MUX del próximo PC (`PCNextSrc`) selecciona entre `PC+4`, target de branch, target de `jal` o target de `jalr`.
+
+Flujo por tipo de instrucción:
+- **Tipo R:** `rs1`, `rs2` → ALU → `ResultSrc=00` → resultado escrito en `rd`
+- **Load (`lw`):** `rs1` + imm → ALU (ADD) → dirección memoria → dato leído → `ResultSrc=01` → `rd`
+- **Store (`sw`):** `rs1` + imm → ALU (ADD) → dirección escritura; `rs2` → dato escrito en memoria
+- **Branch:** `rs1`, `rs2` → ALU (SUB/CMP) → banderas → `PCNextSrc=01` si condición cumplida
+- **Jump (`jal`):** `PC` + imm → target; `PC+4` → `rd`; `PCNextSrc=10`
 
 ### 3.3 Lógica combinacional de la unidad de control
 
@@ -932,7 +973,35 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 
 ### 7.1 Diagrama de bloques — Nivel 3
 
-<!-- Inserta la imagen: docs/img/vga_nivel3.png -->
+![Diagrama de nivel 3 del controlador VGA](image-5.png)
+![Diagrama de timing y bloques internos VGA](image-6.png)
+
+**Objetivo:** Renderizar en pantalla el buffer de texto de 80×24 celdas mediante la interfaz VGA 640×480 @ 60 Hz, generando señales de sincronización y color a partir de la Font ROM y la paleta CGA.
+
+**Entradas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `clk_25_i` | 1 bit | Reloj de píxel de 25 MHz |
+| `rst_i` | 1 bit | Reset activo en bajo |
+| `addr_i` | 32 bits | Dirección de celda del buffer de texto (desde CPU) |
+| `data_i` | 32 bits | Dato a escribir en el buffer (ASCII + color) |
+| `we_i` | 1 bit | Habilitación de escritura al buffer |
+| `cursor_col_i` | 7 bits | Columna del cursor (0–79) |
+| `cursor_row_i` | 5 bits | Fila del cursor (0–23) |
+| `blink_en_i` | 1 bit | Habilita parpadeo del cursor |
+
+**Salidas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `hsync_o` | 1 bit | Sincronía horizontal VGA |
+| `vsync_o` | 1 bit | Sincronía vertical VGA |
+| `r_o` | 4 bits | Canal rojo (paleta CGA) |
+| `g_o` | 4 bits | Canal verde (paleta CGA) |
+| `b_o` | 4 bits | Canal azul (paleta CGA) |
+
+**Explicación general:** El generador de timing produce los contadores de píxel y activa las señales de sync. Con las coordenadas de píxel se determina la celda (col = hcount/8, fila = vcount/16) y el píxel dentro del glifo. La Font ROM entrega el bitmap del carácter almacenado en esa celda. La paleta CGA convierte los índices de color de 4 bits en valores RGB de 4 bits. El cursor se superpone parpadeando sobre la celda indicada por `cursor_col` y `cursor_row`.
 
 ### 7.2 Diagrama de timing VGA 640×480 @ 60 Hz
 
@@ -985,43 +1054,118 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 #### 7.5.1 Generador de timing H/V
 
-**Nombre:** `vga_timing_gen`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+**Nombre:** `vga_timing_gen`
+
+**Objetivo:** Generar las señales de sincronización horizontal (`hsync`) y vertical (`vsync`) VGA y los contadores de coordenadas de píxel activo para el estándar 640×480 @ 60 Hz con reloj de 25 MHz.
+
+**Entradas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `clk_25_i` | 1 bit | Reloj de píxel de 25 MHz |
+| `rst_i` | 1 bit | Reset activo en bajo |
+
+**Salidas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `hsync_o` | 1 bit | Pulso de sincronía horizontal (activo bajo, 96 ciclos) |
+| `vsync_o` | 1 bit | Pulso de sincronía vertical (activo bajo, 2 líneas) |
+| `hcount_o` | 10 bits | Contador de columna de píxel (0–799) |
+| `vcount_o` | 10 bits | Contador de fila de línea (0–524) |
+| `video_on_o` | 1 bit | Indica región de video activo (1 en zona 640×480) |
+
+**Relación con otros módulos:** Provee `hcount` y `vcount` al `text_buffer` para calcular qué celda y fila de glifo renderizar en cada ciclo. Las señales `hsync_o` y `vsync_o` van directamente al conector VGA de la FPGA.
+
+**Funcionamiento:** Dos contadores encadenados (horizontal 0–799 y vertical 0–524) avanzan en cada ciclo de reloj de 25 MHz. Al llegar a 799, el contador horizontal se reinicia y el vertical avanza. Las señales de sync se activan durante los intervalos de blanking según la especificación VGA. `video_on` se activa únicamente en la zona activa de 640×480 píxeles.
+
+**Justificación de diseño:** Implementación directa con dos contadores y comparadores combinacionales; no requiere RAM interna y la lógica de sync es completamente determinista.
 
 #### 7.5.2 Lógica de acceso al buffer de texto
 
-**Nombre:** `text_buffer`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+**Nombre:** `text_buffer`
+
+**Objetivo:** Almacenar las 1920 celdas de texto (80 columnas × 24 filas) con su código ASCII y atributos de color, y proveer el contenido de cada celda al renderizador según las coordenadas de píxel activas.
+
+**Entradas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `clk_i` | 1 bit | Reloj del sistema |
+| `we_i` | 1 bit | Habilitación de escritura desde CPU |
+| `addr_i` | 32 bits | Dirección de celda mapeada en memoria (`0x0001_1000` – `0x0001_2DFF`) |
+| `data_i` | 32 bits | Dato a escribir: `[7:0]` ASCII, `[11:8]` color frente, `[15:12]` color fondo |
+| `hcount_i` | 10 bits | Coordenada horizontal del píxel actual |
+| `vcount_i` | 10 bits | Coordenada vertical del píxel actual |
+
+**Salidas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `char_code_o` | 8 bits | Código ASCII de la celda activa |
+| `fg_color_o` | 4 bits | Índice de color de frente (paleta CGA) |
+| `bg_color_o` | 4 bits | Índice de color de fondo (paleta CGA) |
+
+**Relación con otros módulos:** Recibe escrituras del CPU a través del bus de periféricos. Provee `char_code` a `font_rom` y los colores a `cga_palette`. Recibe coordenadas de `vga_timing_gen`.
+
+**Funcionamiento:** La celda se calcula como `col = hcount/8`, `fila = vcount/16`. La dirección interna es `fila × 80 + col`. La RAM de doble puerto permite escritura desde el CPU y lectura síncrona para el renderizador en el mismo ciclo.
+
+**Justificación de diseño:** Uso de RAM de doble puerto (BRAM en FPGA) para separar accesos de escritura del CPU y lectura del controlador VGA sin conflictos de bus.
 
 #### 7.5.3 Font ROM
 
-**Nombre:** `font_rom`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+**Nombre:** `font_rom`
+
+**Objetivo:** Proveer el bitmap de 8×16 píxeles para cada carácter ASCII, de forma que el renderizador pueda determinar si el píxel actual pertenece al glifo o al fondo.
+
+**Entradas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `char_code_i` | 8 bits | Código ASCII del carácter a renderizar |
+| `row_i` | 4 bits | Fila del glifo dentro de la celda (0–15) |
+
+**Salidas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `pixel_row_o` | 8 bits | Los 8 bits del renglón del glifo (1 = píxel encendido) |
+
+**Relación con otros módulos:** Recibe `char_code` del `text_buffer` y `row` calculado desde `vcount % 16`. Su salida es consumida por `cga_palette` para seleccionar entre color de frente o de fondo.
+
+**Funcionamiento:** ROM indexada por `{char_code, row}` (12 bits de dirección → 256 chars × 16 filas = 4096 entradas de 8 bits). El bit seleccionado del byte de salida corresponde a la columna `hcount % 8`, indicando si ese píxel pertenece al carácter.
+
+**Justificación de diseño:** Al almacenarse como ROM en la FPGA (inicializada desde un archivo `.mif`), el acceso es en un único ciclo sin lógica adicional y sin ocupar RAM de propósito general.
 
 #### 7.5.4 Paleta CGA y lógica de color
 
-**Nombre:** `cga_palette`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+**Nombre:** `cga_palette`
+
+**Objetivo:** Convertir los índices de color de 4 bits (frente y fondo) de la paleta CGA de 16 colores a valores RGB de 4 bits por canal, y seleccionar entre color de frente o de fondo según el píxel activo del glifo.
+
+**Entradas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `fg_color_i` | 4 bits | Índice de color de frente (0–15 paleta CGA) |
+| `bg_color_i` | 4 bits | Índice de color de fondo (0–15 paleta CGA) |
+| `pixel_bit_i` | 1 bit | Bit del glifo actual (1 = píxel de frente, 0 = fondo) |
+| `video_on_i` | 1 bit | Indica si el píxel está en la zona activa de video |
+| `cursor_on_i` | 1 bit | Indica que el cursor está en esta celda y activo |
+
+**Salidas:**
+
+| Señal | Ancho | Función |
+|-------|-------|---------|
+| `r_o` | 4 bits | Valor del canal rojo para el píxel actual |
+| `g_o` | 4 bits | Valor del canal verde para el píxel actual |
+| `b_o` | 4 bits | Valor del canal azul para el píxel actual |
+
+**Relación con otros módulos:** Recibe `pixel_bit` de la `font_rom` y los índices de color del `text_buffer`. Sus salidas `r`, `g`, `b` van directamente a los pines VGA de la FPGA. Recibe `video_on` de `vga_timing_gen`.
+
+**Funcionamiento:** Una tabla de 16 entradas mapea cada índice CGA a su triplete RGB de 4 bits. Si `pixel_bit = 1` se usa el color de frente; si `pixel_bit = 0` se usa el color de fondo. Si `video_on = 0` todas las salidas son cero (blanking). Si `cursor_on = 1` se invierte la selección de colores para simular el cursor de bloque.
+
+**Justificación de diseño:** Lógica puramente combinacional implementada con una ROM de 16 entradas o constantes en el código HDL; sin consumo de recursos de memoria dedicados.
 
 ---
 
@@ -1029,27 +1173,166 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ### 8.1 Diagrama de flujo: Inicialización del sistema
 
-<!-- Inserta la imagen: docs/img/fw_init.png -->
+![Diagrama de flujo de inicialización del firmware](image-7.png)
+
+**Objetivo:** Configurar todos los periféricos del sistema (UART, PS/2, VGA) a un estado inicial conocido antes de entrar al bucle principal del editor de texto.
+
+**Entradas:**
+
+| Señal / Registro | Función |
+|-----------------|---------|
+| Reset del sistema | Condición de inicio tras power-on o reset manual |
+| `UART_CTRL` (`0x0001_0040`) | Registro de control UART a inicializar |
+| `PS2_CTRL` (`0x0001_0050`) | Registro de control PS/2 a inicializar |
+| `VGA_CTRL` (`0x0001_0120`) | Registro de control VGA / cursor a inicializar |
+
+**Salidas / Efectos:**
+
+| Acción | Descripción |
+|--------|-------------|
+| Buffer VGA limpio | Todas las celdas escritas con espacio ASCII (0x20) y color blanco sobre negro |
+| Cursor en (0, 0) | Posición inicial del cursor en columna 0, fila 0 |
+| UART habilitada | `tx_enable` y `rx_enable` activos en `UART_CTRL` |
+| PS/2 habilitado | `kbd_enable` activo en `PS2_CTRL` |
+
+**Explicación general:** Al iniciar, el firmware borra el buffer de texto VGA escribiendo 0x00000720 (espacio con atributos por defecto) en todas las 1920 celdas. Luego habilita UART y PS/2 escribiendo en sus registros de control. Finalmente posiciona el cursor en (0,0) y entra al bucle principal.
+
+---
 
 ### 8.2 FSM de modos del editor
 
-<!-- Inserta la imagen: docs/img/fw_editor_fsm.png -->
+![FSM de modos del editor de texto](image-12.png)
+
+**Objetivo:** Controlar el comportamiento del editor según el modo activo, permitiendo alternar entre modo inserción normal y modo de comando (guardar/cargar vía UART).
+
+**Entradas:**
+
+| Evento | Descripción |
+|--------|-------------|
+| `scancode` recibido | Tecla presionada desde PS/2 |
+| `rx_ready` UART | Byte recibido por UART |
+| Tecla `Esc` | Transición a modo comando |
+| Tecla `I` en modo comando | Regresa a modo inserción |
+
+**Salidas / Estados:**
+
+| Estado | Comportamiento |
+|--------|---------------|
+| `INSERT_MODE` | Captura teclas del PS/2 y las inserta en el buffer VGA |
+| `COMMAND_MODE` | Espera comandos: `S` para guardar, `L` para cargar, `Q` para salir |
+| `UART_SAVE` | Transmite el contenido del buffer por UART |
+| `UART_LOAD` | Recibe contenido de texto por UART y lo escribe en el buffer |
+
+**Explicación general:** El editor opera principalmente en `INSERT_MODE`. Presionar `Esc` transiciona a `COMMAND_MODE`. Desde ahí, `S` inicia la transmisión del buffer por UART (`UART_SAVE`), `L` inicia la recepción (`UART_LOAD`), e `I` regresa a inserción. Las teclas especiales (Enter, Backspace, flechas) son manejadas dentro del modo inserción sin cambiar de estado.
+
+---
 
 ### 8.3 Diagrama de flujo: Bucle principal
 
-<!-- Inserta la imagen: docs/img/fw_main_loop.png -->
+![Diagrama de flujo del bucle principal](image-8.png)
+
+**Objetivo:** Iterar continuamente verificando eventos de teclado PS/2 y de UART, despachando el procesamiento correspondiente según el estado del editor.
+
+**Entradas:**
+
+| Registro / Señal | Función |
+|-----------------|---------|
+| `PS2_CTRL[0]` (`rx_ready`) | Indica scancode disponible en `PS2_RXDATA` |
+| `UART_CTRL[2]` (`rx_ready`) | Indica byte disponible en `UART_RXDATA` |
+| Estado actual del editor | `INSERT_MODE` o `COMMAND_MODE` |
+
+**Salidas / Efectos:**
+
+| Acción | Descripción |
+|--------|-------------|
+| Llamada al manejador PS/2 | Si `PS2.rx_ready = 1` |
+| Llamada al manejador UART | Si `UART.rx_ready = 1` y modo activo lo requiere |
+| Actualización del buffer VGA | Tras cada evento procesado |
+
+**Explicación general:** El bucle principal es un lazo infinito de tipo *polling*. En cada iteración se consultan los flags de recepción de PS/2 y UART. Si hay scancode disponible, se invoca el manejador de teclado. Si hay dato UART y el modo lo requiere, se procesa. Al final de cada iteración se actualiza la posición del cursor en el registro VGA.
+
+---
 
 ### 8.4 Diagrama de flujo: Manejador de teclado PS/2
 
-<!-- Inserta la imagen: docs/img/fw_ps2_handler.png -->
+![Diagrama de flujo del manejador de teclado PS/2](image-10.png)
+
+**Objetivo:** Leer el scancode del teclado PS/2, convertirlo al carácter ASCII correspondiente y ejecutar la acción de edición (insertar carácter, borrar, mover cursor, cambiar línea).
+
+**Entradas:**
+
+| Registro | Función |
+|---------|---------|
+| `PS2_RXDATA` (`0x0001_0054`) | Scancode Set 2 del teclado |
+| Posición actual del cursor `(col, fila)` | Estado interno del firmware |
+| Modo del editor | `INSERT_MODE` o `COMMAND_MODE` |
+
+**Salidas / Efectos:**
+
+| Acción | Condición |
+|--------|-----------|
+| Escritura de ASCII en buffer VGA | Tecla imprimible en modo inserción |
+| Avance del cursor | Tras cada carácter insertado |
+| Retroceso y borrado | Tecla Backspace: borra carácter y retrocede cursor |
+| Salto de línea | Tecla Enter: col=0, fila++ |
+| Movimiento de cursor | Teclas de flecha: ajustan `col` o `fila` |
+| Transición de modo | Tecla `Esc`: pasa a modo comando |
+
+**Explicación general:** Se lee `PS2_RXDATA` y se consulta una tabla de conversión scancode→ASCII. Las teclas de control (Backspace, Enter, flechas, Esc) ejecutan acciones especiales sobre el cursor y el buffer. Los caracteres imprimibles se escriben en la dirección VGA `0x0001_1000 + (fila×80 + col)×4` y el cursor avanza. Si se llega al final de línea, el cursor salta a la siguiente fila automáticamente.
+
+---
 
 ### 8.5 Diagrama de flujo: Actualización del buffer VGA
 
-<!-- Incluido dentro del manejador de teclado o como diagrama separado -->
+![Diagrama de flujo de actualización del buffer VGA](image-11.png)
+
+**Objetivo:** Escribir el carácter procesado en la celda correspondiente del buffer de texto VGA y actualizar la posición y visualización del cursor en pantalla.
+
+**Entradas:**
+
+| Dato | Descripción |
+|------|-------------|
+| `char_ascii` | Código ASCII del carácter a mostrar |
+| `fg_color`, `bg_color` | Atributos de color actuales (por defecto blanco sobre negro) |
+| `cursor_col`, `cursor_row` | Posición actual del cursor |
+
+**Salidas / Efectos:**
+
+| Registro | Acción |
+|---------|--------|
+| Buffer VGA `0x0001_1000 + offset` | Escritura del dato `{bg, fg, ascii}` en la celda |
+| `VGA_CTRL[cursor_col, cursor_row]` (`0x0001_0120`) | Actualización de la posición del cursor |
+
+**Explicación general:** Se calcula el offset como `(cursor_row × 80 + cursor_col) × 4` y se escribe el dato de 32 bits con el código ASCII en `[7:0]`, el color de frente en `[11:8]` y el color de fondo en `[15:12]`. Luego se escribe el nuevo par `(col, fila)` en el registro de cursor del controlador VGA para que el hardware lo visualice en pantalla.
+
+---
 
 ### 8.6 Diagrama de flujo: Protocolo UART (guardar/cargar)
 
-<!-- Inserta la imagen: docs/img/fw_uart_protocol.png -->
+**Objetivo:** Transmitir o recibir el contenido completo del buffer de texto (1920 caracteres) a través del puerto UART, permitiendo guardar y cargar documentos desde una terminal PC.
+
+**Entradas (guardar):**
+
+| Dato | Descripción |
+|------|-------------|
+| Buffer VGA completo | 1920 celdas leídas secuencialmente |
+| `UART_CTRL[tx_ready]` | Confirma que el transmisor está libre antes de cada byte |
+
+**Entradas (cargar):**
+
+| Dato | Descripción |
+|------|-------------|
+| `UART_RXDATA` | Byte recibido por UART |
+| `UART_CTRL[rx_ready]` | Indica byte disponible para leer |
+
+**Salidas / Efectos:**
+
+| Acción | Descripción |
+|--------|-------------|
+| Transmisión de 1920 bytes por UART | Modo guardar: envía ASCII de cada celda en orden fila-columna |
+| Escritura de 1920 bytes al buffer VGA | Modo cargar: recibe y almacena cada carácter en su celda correspondiente |
+
+**Explicación general:** En modo guardar, el firmware recorre las 1920 celdas del buffer VGA, extrae el byte ASCII `[7:0]` de cada una, espera que `tx_ready = 1` y escribe el byte en `UART_TXDATA`. Al terminar, envía un byte de fin de transmisión (`0x04`, EOT). En modo cargar, el firmware espera bytes entrantes por `UART_RXDATA`, los almacena en el buffer VGA en orden secuencial y termina al recibir `0x04` o al completar las 1920 celdas.
 
 ---
 
@@ -1157,3 +1440,4 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 **Alternativa seleccionada:** <!-- -->  
 **Justificación:** <!-- -->
+
