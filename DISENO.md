@@ -1,13 +1,8 @@
 # DISENO.md — Microcontrolador RISC-V RV32I con Procesador de Texto
 
 **Curso:** CE 3201 Taller de Diseño Digital — I Semestre 2026  
-**Proyecto:** Microcontrolador RISC-V con procesador de texto  
-**Equipo:** <!-- Nombres de los integrantes -->  
-**Fecha:** <!-- Fecha de última actualización -->  
-**Repositorio:** <!-- URL del repositorio GitLab -->
-
-> Este documento debe completarse **antes de escribir cualquier línea de código HDL**.  
-> Consulta `docs/guia_visual.md` para convenciones de diagramación y `docs/img/README.md` para nombres de archivos de imagen.
+**Proyecto:** Microcontrolador RISC-V con procesador de texto
+  
 
 ---
 
@@ -57,78 +52,12 @@
 | `vga_g_o` | 4 bits | Canal verde VGA (paleta CGA) |
 | `vga_b_o` | 4 bits | Canal azul VGA (paleta CGA) |
 
-**Explicación general:**  
-<!-- Describe en 2–3 oraciones qué hace el sistema completo desde la perspectiva del usuario -->
+
+### 2.2 Mapa de conexiones CPU – memorias – periféricos
 
 ---
 
-### 2.2 Diagrama de nivel 2 — Subsistemas internos
-
-<!-- Inserta la imagen: docs/img/nivel2_sistema.png -->
-
-**Explicación general del sistema:**  
-<!-- Describe cómo interactúan los subsistemas entre sí -->
-
-#### 2.2.1 CPU (RISC-V RV32I)
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.2 Memoria ROM
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.3 Memoria RAM
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.4 UART
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.5 PS/2
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.6 Timer
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
-#### 2.2.7 Controlador VGA
-
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Explicación general:**  
-
----
-
-### 2.3 Mapa de conexiones CPU – memorias – periféricos
-
-<!-- Inserta la imagen: docs/img/mapa_conexiones.png -->
-
-<!-- Describe brevemente los buses principales: bus de instrucciones, bus de datos y bus de periféricos -->
-
----
-
-### 2.4 Mapa de memoria
+### 2.3 Mapa de memoria
 
 | Región | Inicio | Fin | Tamaño | Descripción |
 |--------|--------|-----|--------|-------------|
@@ -153,23 +82,10 @@
 
 ---
 
-### 2.5 Diagrama de nivel 3 del sistema — Integración con decodificador
-
-<!-- Inserta la imagen: docs/img/nivel3_sistema.png -->
-
-<!-- Describe el decodificador de direcciones, las señales de chip select (CS) por módulo
-     y la generación del reloj de 25 MHz para VGA -->
-
----
 
 ## 3. CPU RISC-V RV32I
 
 ### 3.1 Diagrama de bloques — Nivel 3
-
-<!-- Inserta la imagen: docs/img/cpu_nivel3.png -->
-
-<!-- Describe los bloques funcionales: PC, banco de registros, unidad de instrucción/decodificación,
-     ALU, unidad de control, extensión de signo, MUXes de selección -->
 
 ### 3.2 Ruta de datos (datapath)
 
@@ -357,37 +273,8 @@ Para instrucciones de branch, `PCNextSrc` depende de la evaluación de la condic
 
 ### 3.6 Nivel 4 — Fichas de módulos del CPU
 
-#### 3.6.1 Contador de Programa (PC)
 
-**Nombre:** `program_counter`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
-
-#### 3.6.2 Banco de Registros
-
-**Nombre:** `register_file`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
-
-#### 3.6.3 Unidad Aritmético-Lógica (ALU)
-
-**Nombre:** `alu`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
-
-#### 3.6.4 Unidad de Control
+#### 3.6.1 Unidad de Control
 
 La unidad de control es el bloque combinacional encargado de transformar la instrucción actual y las banderas de la ALU en señales de control para el datapath.
 
@@ -463,23 +350,139 @@ La unidad de control es el bloque combinacional encargado de transformar la inst
 | `00` | `PC + 4`. |
 | `01` | Target de branch tomado. |
 | `10` | Target de `jal`. |
-| `11` | Target de `jalr`. |
-
-#### 3.6.5 Extensión de Signo
-
-**Nombre:** `sign_extend`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
+| `11` | Target de `jalr`. | 
 
 ---
 
-## 4. Periférico UART
+## 4. Memoria ROM
 
-### 4.1 Diagrama de bloques — Nivel 3
+### 4.1 Memoria ROM - Nivel 2
+
+
+![Nivel 2 de la ROM](docs/img/rom_nivel2.jpeg)
+
+* **Objetivo:** Definir la interfaz externa de la memoria ROM encargada de almacenar el código ejecutable (instrucciones) del sistema, estableciendo sus canales de comunicación síncronos con el procesador.
+* **Entradas:** * `ProgAddress [31:0]`: Bus de dirección de instrucciones generado por el Program Counter (PC) de la CPU.
+  * `clk_i`: Señal de reloj global del sistema para la sincronización de la lectura de datos.
+* **Salidas:** * `ProgIn_i [31:0]`: Bus de datos síncrono que transporta la instrucción de 32 bits leída hacia la etapa de decodificación de la CPU.
+* **Explicación general:** El bloque representa la frontera externa de la memoria de programa no volátil. Recibe una dirección de 32 bits y, de manera sincronizada con el flanco de subida del reloj, expone la instrucción binaria correspondiente para que el procesador pueda ejecutarla.
+
+### 4.2 Memoria ROM - Nivel 3
+
+![Nivel 3 de la ROM](docs/img/ram_nivel3.jpeg)
+
+#### Sub-bloque 1: Extractor de Dirección
+* **Objetivo:** Truncar el bus de direcciones maestro emitido por el procesador para aislar las líneas físicas que indexan el espacio real de almacenamiento de la ROM.
+* **Entradas:** * `ProgAddress_o [31:0]`: Bus completo de dirección de programa proveniente de la CPU.
+* **Salidas:** * `dir [10:0]`: Bus de dirección local truncado de 11 bits.
+* **Explicación general:** Este bloque realiza un enrutamiento puramente combinacional (*wire splitting*). Toma los 32 bits originales y extrae únicamente los 11 bits inferiores necesarios para direccionar las 2048 líneas lógicas de la memoria ($2^{11} = 2048$), descartando los bits superiores redundantes.
+
+#### Sub-bloque 2: Arreglo de Datos (32 bits x 2048 líneas)
+* **Objetivo:** Almacenar de forma permanente el set de instrucciones del firmware del microcontrolador y exponer de forma síncrona la palabra solicitada.
+* **Entradas:** * `dir [10:0]`: Bus indexado interno de 11 bits con la dirección local.
+  * `clk`: Señal de reloj global del sistema.
+* **Salidas:** * `ProgIn_i [31:0]`: Bus de datos con la instrucción de 32 bits seleccionada.
+* **Explicación general:** Consiste en una matriz de celdas síncronas organizada en 2048 filas de 32 bits cada una. En cada flanco de subida de la señal de reloj, el bloque decodifica la dirección presente en `dir[10:0]` y libera la instrucción almacenada en dicha fila hacia el bus de salida del procesador.
+
+---
+
+## 5. Memoria RAM
+
+### 5.1 Memoria RAM - Nivel 2
+
+![Nivel 2 de la RAM](docs/img/ram_nivel2.jpeg)
+
+* **Objetivo:** Definir la interfaz externa de la memoria estática de acceso aleatorio (RAM) dedicada al almacenamiento volátil de las variables de datos y la infraestructura de pila del sistema.
+* **Entradas:** * `DataAddress_o [31:0]`: Bus de dirección maestro generado por la CPU para especificar la posición de memoria a acceder.
+  * `DataOut_o [31:0]`: Bus de datos de escritura que transporta la palabra desde la CPU para ser guardada.
+  * `we_0 [0:0]`: Señal de habilitación de escritura maestra (*Write Enable*) enviada por el procesador.
+  * `cs_i [0:0]`: Señal de selección de chip (*Chip Select*) activada por el decodificador de direcciones externo.
+  * `clk`: Señal de reloj global del sistema para sincronizar operaciones.
+* **Salidas:** * `ram_data_o [31:0]`: Bus de datos de lectura síncrono que expone la palabra de 32 bits solicitada hacia el bus de retorno de la CPU.
+* **Explicación general:** Este bloque representa la periferia de la memoria de datos volátil. Coordina de forma síncrona tanto la lectura como la escritura de palabras de 32 bits, condicionando su activación a que el procesador lo seleccione formalmente mediante la línea de control `cs_i`.
+
+---
+### 5.2 Memoria RAM - nivel 3
+
+![Nivel 3 de la RAM](docs/img/ram_nivel3.jpeg)
+
+#### Sub-bloque 1: Extractor de Dirección
+* **Objetivo:** Truncar las líneas de la dirección local mapeada para acoplarla al rango e índice físico real del arreglo de celdas de la RAM.
+* **Entradas:** * `local_addr_o [12:0]`: Bus de offset local de 13 bits proveniente del traductor de direcciones.
+* **Salidas:** * `dir_ram [9:0]`: Bus de dirección truncado interno de 10 bits.
+* **Explicación general:** Actúa como una pasarela estructural que toma el bus local y extrae únicamente los 10 bits inferiores. Esto limita el espacio indexable a exactamente 1024 líneas de datos ($2^{10} = 1024$), lo cual se acopla con precisión matemática al bloque lógico de 4 KiB de memoria asignado.
+
+#### Sub-bloque 2: Compuerta de Escritura (AND Gate)
+* **Objetivo:** Proteger la integridad del arreglo de datos previniendo escrituras accidentales o corruptas fuera de la región lógica de la RAM.
+* **Entradas:** * `we_0 [0:0]`: Solicitud de escritura maestra de la CPU.
+  * `cs_i [0:0]`: Señal de validación de chip select del Address Translator.
+* **Salidas:** * `ram_we [0:0]`: Señal de habilitación de escritura real y filtrada interna.
+* **Explicación general:** Implementa una función lógica combinacional AND. Garantiza que la memoria interna solo ejecute un ciclo de escritura si la CPU quiere escribir (`we_0 = 1`) y, al mismo tiempo, la dirección colocada en el bus es válida para la RAM (`cs_i = 1`).
+
+#### Sub-bloque 3: Arreglo de Datos
+* **Objetivo:** Proveer la matriz física de celdas biestables para el almacenamiento volátil y la lectura de datos de 32 bits.
+* **Entradas:** * `dir_ram [9:0]`: Dirección indexada interna de 10 bits.
+  * `ram_we [0:0]`: Señal interna de control de escritura filtrada.
+  * `DataOut_o [31:0]`: Bus de datos con la palabra a guardar.
+  * `clk`: Señal de reloj global del sistema.
+* **Salidas:** * `ram_data_o [31:0]`: Bus de datos con el valor síncrono leído.
+* **Explicación general:** Estructura basada en bloques de memoria M10K embebidos en la FPGA, configurada para alojar 1024 palabras de 32 bits. En el flanco ascendente del reloj, si `ram_we` está activo, almacena el dato de `DataOut_o` en la fila de destino; de lo contrario, decodifica la fila en `dir_ram` y expone síncronamente su contenido en `ram_data_o`.
+
+---
+
+## 6. Address Translator
+### 6.1 Address Translator - Nivel 2
+
+![Nivel 2 del AT](docs/img/AT_nivel2.jpeg)
+
+* **Objetivo:** Definir la interfaz externa de la unidad combinacional central de decodificación, encargada de administrar el mapa global de memoria del sistema y distribuir las señales de habilitación.
+* **Entradas:** * `addr_i [31:0]`: Bus de direcciones maestro emitido por la CPU para datos y periféricos.
+  * `we_i [0:0]`: Señal de control de habilitación de escritura maestra de la CPU.
+* **Salidas:** * `cs_ram_o [0:0]`: Línea de activación selectiva para habilitar el bloque de la memoria RAM.
+  * `cs_uart_o [0:0]`: Línea de activación selectiva para el controlador serie UART.
+  * `cs_ps2_o [0:0]`: Línea de activación selectiva para el controlador de teclado/mouse PS/2.
+  * `cs_timer_o [0:0]`: Línea de activación selectiva para los registros del módulo Timer.
+  * `cs_vga_ctrl_o [0:0]`: Línea de activación selectiva para la configuración del núcleo de video VGA.
+  * `cs_vga_buf_o [0:0]`: Línea de activación selectiva para la memoria del buffer de pixeles VGA.
+  * `local_addr_o [12:0]`: Bus de offset de dirección local distribuido en paralelo a los periféricos.
+  * `we_o [0:0]`: Réplica de control combinacional de la señal de escritura.
+* **Explicación general:** Este bloque opera de manera puramente combinacional (sin reloj interno). Examina de forma instantánea la dirección solicitada por la CPU en cada ciclo y enciende con lógica *One-Hot* la salida de control (`cs_*`) del dispositivo que corresponde, aislando el resto de módulos para evitar conflictos en el bus.
+
+---
+### 6.2 Address Translator - Nivel 3
+
+![Nivel 3 del AT](docs/img/AT_nivel3.jpeg)
+
+#### Sub-bloque 1: Repartidor de Hilos
+* **Objetivo:** Segregar el bus maestro de direcciones en múltiples sub-vectores de bits específicos para alimentar los comparadores paralelos sin introducir retardos.
+* **Entradas:** * `addr_i [31:0]`: Bus de direcciones de 32 bits de la CPU.
+* **Salidas:** * `addr_i [31:16]`: Vector de bits superiores para la zona periférica.
+  * `addr_i [31:12]`: Vector de bits superiores para la zona de la RAM.
+  * `local_addr_o [12:0]`: Bus de offset directo de salida.
+* **Explicación general:** Realiza una división física de las pistas de cobre del bus de entrada. Distribuye las fracciones de bits exactas requeridas por cada etapa de comparación de manera concurrente y extrae los 13 bits inferiores para definir de forma directa el offset local del sistema.
+
+#### Sub-bloque 2: Decodificador de la RAM
+* **Objetivo:** Monitorear el bus superior y validar si la dirección solicitada por la CPU se encuentra dentro del rango físico asignado a la memoria RAM.
+* **Entradas:** * `addr_i [31:12]`: Segmento de dirección de 20 bits de la CPU.
+* **Salidas:** * `cs_ram_o [0:0]`: Señal selectiva de chip select para la RAM.
+* **Explicación general:** Evalúa combinacionalmente mediante una compuerta lógica de coincidencia exacta si `addr_i[31:12] == 20'h00002`. Si la igualdad es verdadera, genera un `1` lógico en `cs_ram_o`, habilitando el acceso a la RAM en el rango de direcciones `0x0000_2000` a `0x0000_2FFF`.
+
+#### Sub-bloque 3: Pre-Decodificador de Periféricos
+* **Objetivo:** Validar globalmente si la dirección de la CPU pertenece a la ventana lógica base común reservada para los dispositivos de Entrada/Salida.
+* **Entradas:** * `addr_i [31:16]`: Segmento de dirección de 16 bits de la CPU.
+* **Salidas:** * `perph_reg`: Señal de control interna de habilitación regional.
+* **Explicación general:** Analiza de forma constante los 16 bits más significativos del bus mediante una comparación lógica de igualdad fija (`addr_i[31:16] == 16'h0001`). Genera la bandera interna `perph_reg` para notificar al sistema que se está accediendo al espacio general de periféricos.
+
+#### Sub-bloque 4: Decodificador de Periféricos
+* **Objetivo:** Discriminar con precisión milimétrica la sub-región de Entrada/Salida activa y encender la línea de control del periférico específico.
+* **Entradas:** * `perph_reg`: Bandera interna de validación regional proveniente del Pre-Decodificador.
+  * (Hilos internos de selección derivados del reparto de bus, ej: `addr_i[15:0]`).
+* **Salidas:** * `cs_uart_o`, `cs_ps2_o`, `cs_timer_o`, `cs_vga_ctrl_o`, `cs_vga_buf_o` (todos de `[0:0]`).
+* **Explicación general:** Este bloque combinacional se encuentra condicionado por la señal `perph_reg`. Cuando esta es alta, evalúa las sub-divisiones lógicas del bus (`addr_i[15:4]` para UART/PS2/Timer, `addr_i[15:0]` para VGA Ctrl, y `addr_i[15:8]` para VGA Buffer) para conmutar bajo una distribución *One-Hot* la salida correspondiente al hardware direccionado.
+
+## 7. Periférico UART
+
+### 7.1 Diagrama de bloques — Nivel 3
 
 ![Diagrama de nivel 3 del periférico UART](docs/img/uart_n3.png)
 
@@ -526,7 +529,7 @@ El núcleo UART implementa la comunicación serial con configuración 115200-8N1
 
 ---
 
-### 4.2 FSM del transmisor y receptor UART
+### 7.2 FSM del transmisor y receptor UART
 
 #### FSM del transmisor (`uart_tx`)
 
@@ -552,7 +555,7 @@ El núcleo UART implementa la comunicación serial con configuración 115200-8N1
 
 ---
 
-### 4.3 Tabla de interfaz de puertos
+### 7.3 Tabla de interfaz de puertos
 
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
@@ -572,11 +575,11 @@ El núcleo UART implementa la comunicación serial con configuración 115200-8N1
 
 
 
-### 4.4 Nivel 4 — Fichas de módulos del UART
+### 7.4 Nivel 4 — Fichas de módulos del UART
 
 El periférico UART se descompone en una interfaz de bus, tres registros mapeados en memoria y un núcleo serial 115200-8N1 compuesto por generador de baud rate, transmisor y receptor.
 
-#### 4.4.1 Interfaz de bus UART
+#### 7.4.1 Interfaz de bus UART
 
 | Campo                | Descripción                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------- |
@@ -594,7 +597,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | `0x0001_0044` | `TXDATA`              | Escritura del byte a transmitir.             |
 | `0x0001_0048` | `RXDATA`              | Lectura del byte recibido.                   |
 
-#### 4.4.2 Registro CTRL/STATUS del UART
+#### 7.4.2 Registro CTRL/STATUS del UART
 
 | Campo                | Descripción                                                                                               |
 | -------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -617,7 +620,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | `rx_enable` | R/W | Habilita el receptor UART. |
 | `clear_flags` | WO | Limpia banderas de estado/error. |
 
-#### 4.4.3 Registro TXDATA del UART
+#### 7.4.3 Registro TXDATA del UART
 
 | Campo                | Descripción                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------- |
@@ -630,7 +633,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | Dependencias         | `uart_bus_if`, `uart_tx`.                                                             |
 | Observaciones        | La escritura en este registro carga `tx_data[7:0]` y genera el pulso interno `tx_start` hacia `uart_tx`. |
 
-#### 4.4.4 Registro RXDATA del UART
+#### 7.4.4 Registro RXDATA del UART
 
 | Campo                | Descripción                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -643,7 +646,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | Dependencias         | `uart_rx`, `uart_bus_if`, `CTRL/STATUS`.                                                   |
 | Observaciones        | La lectura de este registro genera `rd_rx_data`, usado para limpiar la bandera `rx_ready`. |
 
-#### 4.4.5 Generador de baud rate
+#### 7.4.5 Generador de baud rate
 
 | Campo                | Descripción                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------- |
@@ -660,7 +663,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | `baud_tick`   | `uart_tx` | Marca la cadencia de transmisión de cada bit.        |
 | `sample_tick` | `uart_rx` | Marca el instante de muestreo de los bits recibidos. |
 
-#### 4.4.6 Transmisor UART
+#### 7.4.6 Transmisor UART
 
 | Campo                | Descripción                                                              |
 | -------------------- | ------------------------------------------------------------------------ |
@@ -672,7 +675,7 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | Dependencias         | `TXDATA`, `CTRL/STATUS`, `baud_gen`.                                     |
 | Observaciones        | La FSM interna recorre los estados `IDLE`, `START`, `DATA` y `STOP`.     |
 
-#### 4.4.7 Receptor UART
+#### 7.4.7 Receptor UART
 
 | Campo                | Descripción                                                                    |
 | -------------------- | ------------------------------------------------------------------------------ |
@@ -685,13 +688,13 @@ El periférico UART se descompone en una interfaz de bus, tres registros mapeado
 | Observaciones        | La FSM interna recorre los estados `IDLE`, `START`, `DATA` y `STOP`.           |
 
 
-## 5. Periférico PS/2
+## 8. Periférico PS/2
 
-### 5.1 Diagrama de bloques — Nivel 3
+### 8.1 Diagrama de bloques — Nivel 3
 
 ![Diagrama de nivel 3 del periférico PS/2](docs/img/ps2_n3.png)
 
-**Figura 5.1.** Diagrama de nivel 3 del periférico PS/2.
+**Figura 8.1.** Diagrama de nivel 3 del periférico PS/2.
 
 El periférico PS/2 se descompone en una interfaz de bus `ps2_bus_if`, un banco de registros mapeados en memoria, una cadena de recepción y un transmisor de comandos. Esta organización separa la comunicación con el bus del sistema, el almacenamiento visible por software y la lógica propia del protocolo PS/2.
 
@@ -742,7 +745,7 @@ La cadena de recepción sincroniza `ps2_clk_i` y `ps2_data_i`, detecta flancos d
 
 ---
 
-### 5.2 FSM de recepción PS/2
+### 8.2 FSM de recepción PS/2
 
 | Estado | Descripción | Condición de salida | Próximo estado | Señales activas |
 |--------|-------------|---------------------|----------------|-----------------|
@@ -761,7 +764,7 @@ Cuando se recibe `0xF0`, el bloque de prefijos activa internamente `is_break` pa
 
 ---
 
-### 5.3 Tabla de interfaz de puertos
+### 8.3 Tabla de interfaz de puertos
 
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
@@ -783,11 +786,11 @@ Cuando se recibe `0xF0`, el bloque de prefijos activa internamente `is_break` pa
 
 ---
 
-### 5.4 Nivel 4 — Fichas de módulos del PS/2
+### 8.4 Nivel 4 — Fichas de módulos del PS/2
 
 El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en memoria y un núcleo PS/2 encargado de recibir scancodes Set 2 y transmitir comandos al teclado.
 
-#### 5.4.1 Interfaz de bus PS/2
+#### 8.4.1 Interfaz de bus PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -799,7 +802,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | Bus e interconexión, `CTRL/STATUS`, `RXDATA`, `TXDATA`. |
 | Observaciones | Decodifica `0x0001_0050`, `0x0001_0054` y `0x0001_0058`. |
 
-#### 5.4.2 Registro CTRL/STATUS del PS/2
+#### 8.4.2 Registro CTRL/STATUS del PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -820,7 +823,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | 3 | `tx_error` | RO | Error de transmisión o ausencia de ACK. |
 | 4 | `kbd_enable` | R/W | Habilita recepción del teclado. |
 
-#### 5.4.3 Registro RXDATA del PS/2
+#### 8.4.3 Registro RXDATA del PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -833,7 +836,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | `ps2_decoder`, `ps2_bus_if`, `CTRL/STATUS`. |
 | Observaciones | La lectura limpia `rx_ready` mediante `rd_rx_data`. |
 
-#### 5.4.4 Registro TXDATA del PS/2
+#### 8.4.4 Registro TXDATA del PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -846,7 +849,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | `ps2_bus_if`, `ps2_tx`. |
 | Observaciones | El firmware debe consultar `tx_ready` antes de escribir un nuevo comando. |
 
-#### 5.4.5 Sincronizador y detector de flanco
+#### 8.4.5 Sincronizador y detector de flanco
 
 | Campo | Descripción |
 |-------|-------------|
@@ -858,7 +861,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | FSM de recepción, receptor de trama y transmisor PS/2. |
 | Observaciones | El flanco descendente marca el instante de captura de cada bit recibido. |
 
-#### 5.4.6 FSM de recepción PS/2
+#### 8.4.6 FSM de recepción PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -870,7 +873,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | `ps2_sync`, `ps2_rx_frame`, `CTRL/STATUS`. |
 | Observaciones | Permanece en `IDLE` si `kbd_enable = 0`. |
 
-#### 5.4.7 Receptor de trama de 11 bits
+#### 8.4.7 Receptor de trama de 11 bits
 
 | Campo | Descripción |
 |-------|-------------|
@@ -882,7 +885,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | FSM de recepción, verificador de paridad. |
 | Observaciones | Trama: start, 8 datos LSB-first, paridad impar y stop. |
 
-#### 5.4.8 Verificador de paridad y stop
+#### 8.4.8 Verificador de paridad y stop
 
 | Campo | Descripción |
 |-------|-------------|
@@ -894,7 +897,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | Receptor de trama, manejo de prefijos, `CTRL/STATUS`. |
 | Observaciones | Si paridad o stop fallan, se activa `rx_error`. |
 
-#### 5.4.9 Manejo de prefijos 0xF0 / 0xE0
+#### 8.4.9 Manejo de prefijos 0xF0 / 0xE0
 
 | Campo | Descripción |
 |-------|-------------|
@@ -906,7 +909,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | Verificador de paridad, decodificador de scancodes. |
 | Observaciones | `is_break` e `is_extended` no se exponen en `CTRL/STATUS`. |
 
-#### 5.4.10 Decodificador de scancodes Set 2
+#### 8.4.10 Decodificador de scancodes Set 2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -918,7 +921,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Dependencias | `ps2_prefix`, `RXDATA`, `CTRL/STATUS`. |
 | Observaciones | Usa internamente los prefijos para interpretar el evento de teclado. |
 
-#### 5.4.11 Transmisor de comandos PS/2
+#### 8.4.11 Transmisor de comandos PS/2
 
 | Campo | Descripción |
 |-------|-------------|
@@ -931,17 +934,17 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | Observaciones | Implementa transmisión host-a-dispositivo y espera ACK. |
 
 
-## 6. Periférico Timer
+## 9. Periférico Timer
 
-### 6.1 Diagrama de bloques — Nivel 3
+### 9.1 Diagrama de bloques — Nivel 3
 
 <!-- Inserta la imagen: docs/img/timer_nivel3.png -->
 
-### 6.2 FSM del Timer
+### 9.2 FSM del Timer
 
 <!-- Inserta la imagen -->
 
-### 6.3 Tabla de interfaz de puertos
+### 9.3 Tabla de interfaz de puertos
 
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
@@ -955,23 +958,10 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 | `timeout_o` | Salida | 1 bit | Indica que el contador llegó a 0 |
 | `count_o` | Salida | 32 bits | Valor actual del contador |
 
-### 6.4 Nivel 4 — Fichas de módulos del Timer
 
-#### 6.4.1 Contador de 32 bits
+## 10. Controlador VGA
 
-**Nombre:** `timer_counter`  
-**Objetivo:**  
-**Entradas:**  
-**Salidas:**  
-**Relación con otros módulos:**  
-**Funcionamiento:**  
-**Justificación de diseño:**  
-
----
-
-## 7. Controlador VGA
-
-### 7.1 Diagrama de bloques — Nivel 3
+### 10.1 Diagrama de bloques — Nivel 3
 
 ![Diagrama de nivel 3 del controlador VGA](image-5.png)
 ![Diagrama de timing y bloques internos VGA](image-6.png)
@@ -1003,7 +993,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 
 **Explicación general:** El generador de timing produce los contadores de píxel y activa las señales de sync. Con las coordenadas de píxel se determina la celda (col = hcount/8, fila = vcount/16) y el píxel dentro del glifo. La Font ROM entrega el bitmap del carácter almacenado en esa celda. La paleta CGA convierte los índices de color de 4 bits en valores RGB de 4 bits. El cursor se superpone parpadeando sobre la celda indicada por `cursor_col` y `cursor_row`.
 
-### 7.2 Diagrama de timing VGA 640×480 @ 60 Hz
+### 10.2 Diagrama de timing VGA 640×480 @ 60 Hz
 
 <!-- Inserta la imagen: docs/img/vga_timing.png -->
 
@@ -1017,7 +1007,7 @@ El periférico PS/2 se descompone en una interfaz de bus, registros mapeados en 
 
 Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
-### 7.3 Formato del buffer de texto
+### 10.3 Formato del buffer de texto
 
 <!-- Inserta la imagen: docs/img/vga_text_mode.png -->
 
@@ -1032,7 +1022,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | [15:12] | Color fondo | Paleta CGA de 4 bits |
 | [31:16] | Reservado | Leer como 0, escrituras ignoradas |
 
-### 7.4 Tabla de interfaz de puertos
+### 10.4 Tabla de interfaz de puertos
 
 | Puerto | Dirección | Ancho | Función |
 |--------|-----------|-------|---------|
@@ -1050,9 +1040,9 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | `g_o` | Salida | 4 bits | Canal verde |
 | `b_o` | Salida | 4 bits | Canal azul |
 
-### 7.5 Nivel 4 — Fichas de módulos del controlador VGA
+### 10.5 Nivel 4 — Fichas de módulos del controlador VGA
 
-#### 7.5.1 Generador de timing H/V
+#### 10.5.1 Generador de timing H/V
 
 **Nombre:** `vga_timing_gen`
 
@@ -1081,7 +1071,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 **Justificación de diseño:** Implementación directa con dos contadores y comparadores combinacionales; no requiere RAM interna y la lógica de sync es completamente determinista.
 
-#### 7.5.2 Lógica de acceso al buffer de texto
+#### 10.5.2 Lógica de acceso al buffer de texto
 
 **Nombre:** `text_buffer`
 
@@ -1112,7 +1102,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 **Justificación de diseño:** Uso de RAM de doble puerto (BRAM en FPGA) para separar accesos de escritura del CPU y lectura del controlador VGA sin conflictos de bus.
 
-#### 7.5.3 Font ROM
+#### 10.5.3 Font ROM
 
 **Nombre:** `font_rom`
 
@@ -1137,7 +1127,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 **Justificación de diseño:** Al almacenarse como ROM en la FPGA (inicializada desde un archivo `.mif`), el acceso es en un único ciclo sin lógica adicional y sin ocupar RAM de propósito general.
 
-#### 7.5.4 Paleta CGA y lógica de color
+#### 10.5.4 Paleta CGA y lógica de color
 
 **Nombre:** `cga_palette`
 
@@ -1169,9 +1159,9 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-## 8. Firmware — Editor de texto
+## 11. Firmware — Editor de texto
 
-### 8.1 Diagrama de flujo: Inicialización del sistema
+### 11.1 Diagrama de flujo: Inicialización del sistema
 
 ![Diagrama de flujo de inicialización del firmware](image-7.png)
 
@@ -1199,7 +1189,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-### 8.2 FSM de modos del editor
+### 11.2 FSM de modos del editor
 
 ![FSM de modos del editor de texto](image-12.png)
 
@@ -1227,7 +1217,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-### 8.3 Diagrama de flujo: Bucle principal
+### 11.3 Diagrama de flujo: Bucle principal
 
 ![Diagrama de flujo del bucle principal](image-8.png)
 
@@ -1253,7 +1243,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-### 8.4 Diagrama de flujo: Manejador de teclado PS/2
+### 11.4 Diagrama de flujo: Manejador de teclado PS/2
 
 ![Diagrama de flujo del manejador de teclado PS/2](image-10.png)
 
@@ -1282,7 +1272,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-### 8.5 Diagrama de flujo: Actualización del buffer VGA
+### 11.5 Diagrama de flujo: Actualización del buffer VGA
 
 ![Diagrama de flujo de actualización del buffer VGA](image-11.png)
 
@@ -1307,7 +1297,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-### 8.6 Diagrama de flujo: Protocolo UART (guardar/cargar)
+### 11.6 Diagrama de flujo: Protocolo UART (guardar/cargar)
 
 **Objetivo:** Transmitir o recibir el contenido completo del buffer de texto (1920 caracteres) a través del puerto UART, permitiendo guardar y cargar documentos desde una terminal PC.
 
@@ -1336,9 +1326,9 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-## 9. Estrategia de verificación
+## 12. Estrategia de verificación
 
-### 9.1 CPU
+### 12.1 CPU
 
 | # | Señales de entrada | Comportamiento esperado | Criterio pass/fail | Testbench |
 |---|--------------------|------------------------|--------------------|-----------|
@@ -1346,7 +1336,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | 2 | <!-- --> | <!-- --> | <!-- --> | `tb_cpu.sv` |
 | 3 | <!-- --> | <!-- --> | <!-- --> | `tb_cpu.sv` |
 
-### 9.2 UART
+### 12.2 UART
 
 | # | Señales de entrada | Comportamiento esperado | Criterio pass/fail | Testbench |
 |---|--------------------|------------------------|--------------------|-----------|
@@ -1354,7 +1344,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | 2 | <!-- --> | <!-- --> | <!-- --> | `tb_uart.sv` |
 | 3 | <!-- --> | <!-- --> | <!-- --> | `tb_uart.sv` |
 
-### 9.3 PS/2
+### 12.3 PS/2
 
 | # | Señales de entrada | Comportamiento esperado | Criterio pass/fail | Testbench |
 |---|--------------------|------------------------|--------------------|-----------|
@@ -1362,7 +1352,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | 2 | <!-- --> | <!-- --> | <!-- --> | `tb_ps2.sv` |
 | 3 | <!-- --> | <!-- --> | <!-- --> | `tb_ps2.sv` |
 
-### 9.4 Timer
+### 12.4 Timer
 
 | # | Señales de entrada | Comportamiento esperado | Criterio pass/fail | Testbench |
 |---|--------------------|------------------------|--------------------|-----------|
@@ -1370,7 +1360,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 | 2 | <!-- --> | <!-- --> | <!-- --> | `tb_timer.sv` |
 | 3 | <!-- --> | <!-- --> | <!-- --> | `tb_timer.sv` |
 
-### 9.5 VGA
+### 12.5 VGA
 
 | # | Señales de entrada | Comportamiento esperado | Criterio pass/fail | Testbench |
 |---|--------------------|------------------------|--------------------|-----------|
@@ -1380,7 +1370,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-## 10. Tabla de asignación de pines FPGA DE10-Standard
+## 13. Tabla de asignación de pines FPGA DE10-Standard
 
 | Señal del diseño | Dirección | Pin físico FPGA | Estándar I/O | Comentario |
 |-----------------|-----------|----------------|--------------|------------|
@@ -1398,9 +1388,9 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 
 ---
 
-## 11. Alternativas de diseño
+## 14. Alternativas de diseño
 
-### 11.1 CPU: Uniciclo vs. Multiciclo
+### 14.1 CPU: Uniciclo vs. Multiciclo
 
 <!-- Inserta la imagen: docs/img/alt_cpu_unic_vs_multic.png -->
 
@@ -1415,7 +1405,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 **Alternativa seleccionada:** <!-- Uniciclo / Multiciclo -->  
 **Justificación:** <!-- -->
 
-### 11.2 Controlador PS/2: Alternativas
+### 14.2 Controlador PS/2: Alternativas
 
 <!-- Inserta la imagen: docs/img/alt_ps2.png -->
 
@@ -1428,7 +1418,7 @@ Reloj de píxel: 25 MHz (generado por divisor de frecuencia o PLL desde 50 MHz).
 **Alternativa seleccionada:** <!-- -->  
 **Justificación:** <!-- -->
 
-### 11.3 Renderizado VGA: Alternativas
+### 14.3 Renderizado VGA: Alternativas
 
 <!-- Inserta la imagen: docs/img/alt_vga.png -->
 
