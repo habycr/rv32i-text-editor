@@ -1,0 +1,1 @@
+UART LOAD TEST - CE3201 RISC-V EDITOR. COM10 FT232R 115200 8N1. If you can read this on VGA, command :r works. Now test save with :w after editing this text. Colon test: : : : ; ; ; End of test.

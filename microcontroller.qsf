@@ -1,0 +1,173 @@
+# -------------------------------------------------------------------------- #
+#
+# Copyright (C) 2018  Intel Corporation. All rights reserved.
+# Your use of Intel Corporation's design tools, logic functions 
+# and other software and tools, and its AMPP partner logic 
+# functions, and any output files from any of the foregoing 
+# (including device programming or simulation files), and any 
+# associated documentation or information are expressly subject 
+# to the terms and conditions of the Intel Program License 
+# Subscription Agreement, the Intel Quartus Prime License Agreement,
+# the Intel FPGA IP License Agreement, or other applicable license
+# agreement, including, without limitation, that your use is for
+# the sole purpose of programming logic devices manufactured by
+# Intel and sold by Intel or its authorized distributors.  Please
+# refer to the applicable agreement for further details.
+#
+# -------------------------------------------------------------------------- #
+#
+# Quartus Prime
+# Version 18.0.0 Build 614 04/24/2018 SJ Lite Edition
+# Date created = 23:20:23  June 18, 2026
+#
+# -------------------------------------------------------------------------- #
+#
+# Notes:
+#
+# 1) The default values for assignments are stored in the file:
+#		microcontroller_assignment_defaults.qdf
+#    If this file doesn't exist, see file:
+#		assignment_defaults.qdf
+#
+# 2) Altera recommends that you do not modify this file. This
+#    file is updated automatically by the Quartus Prime software
+#    and any changes you make may be lost or overwritten.
+#
+# -------------------------------------------------------------------------- #
+
+
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEMA5F31C6
+set_global_assignment -name TOP_LEVEL_ENTITY microcontroller
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 18.0.0
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "23:20:23  JUNE 18, 2026"
+set_global_assignment -name LAST_QUARTUS_VERSION "18.0.0 Lite Edition"
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name BOARD "DE1-SoC Board"
+set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (SystemVerilog)"
+set_global_assignment -name EDA_TIME_SCALE "1 ps" -section_id eda_simulation
+set_global_assignment -name EDA_OUTPUT_DATA_FORMAT "SYSTEMVERILOG HDL" -section_id eda_simulation
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
+set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
+set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/vga_timing_gen.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/vga_controller.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/vga_clk_gen.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/text_buffer.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/font_rom.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/vga/cga_palette.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/uart/uart_tx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/uart/uart_rx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/uart/uart_peripheral.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/uart/baud_gen.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/timer/timer_prescaler.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/timer/timer_pll_wrapper.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/timer/timer_peripheral.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/timer/timer_counter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/rom/rom.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ram/ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_tx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_sync.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_rx_fsm.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_rx_frame.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_peripheral.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/peripherals/ps2/ps2_parity_chk.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/sign_extend.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/riscv_datapath.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/riscv_cpu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/register_file.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/program_counter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/control_unit.sv
+set_global_assignment -name SYSTEMVERILOG_FILE cpu/alu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/ram_decoder.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/peripheral_predecoder.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/peripheral_decoder.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/local_address_mux.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/address_translator.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE "Address Translator/address_splitter.sv"
+set_global_assignment -name SYSTEMVERILOG_FILE microcontroller.sv
+set_global_assignment -name QIP_FILE pll/timer_pll.qip
+set_global_assignment -name SIP_FILE pll/timer_pll.sip
+
+# --- Constraints de temporización (TimeQuest) ---
+# Sin este archivo, TimeQuest corre completamente sin restricciones.
+set_global_assignment -name SDC_FILE microcontroller.sdc
+
+# ============================================================================
+# PIN ASSIGNMENTS — PENDIENTE, NO SE INVENTAN NUMEROS DE PIN
+# ============================================================================
+# Este parche NO incluye set_location_assignment para los puertos de
+# microcontroller.sv (CLOCK_50, rst_n, PS2_CLK, PS2_DAT, UART_RXD, UART_TXD,
+# VGA_HS, VGA_VS, VGA_R[7:0], VGA_G[7:0], VGA_B[7:0], VGA_CLK, VGA_BLANK_N,
+# VGA_SYNC_N) porque esos numeros de pin NO estaban presentes en ninguno de
+# los archivos fuente entregados, y asignar pines incorrectos en hardware
+# real puede dañar la FPGA o el periférico conectado (especialmente VGA/PS2).
+#
+# Antes de programar la placa:
+#   1. Use el archivo .qsf de referencia que el curso CE 3201 distribuye
+#      para la DE1-SoC (suele incluir ya todos los set_location_assignment
+#      + set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" /
+#      "3.3-V LVCMOS" correctos), o
+#   2. Consulte el "DE1-SoC User Manual" / "DE1-SoC_Golden_Top" oficial de
+#      Terasic (tabla de pines del Cyclone V 5CSEMA5F31C6) y agregue aquí
+#      una línea set_location_assignment + set_instance_assignment por
+#      cada puerto de nivel superior.
+#   3. Alternativamente, en Quartus: Assignments -> Pin Planner, y asigne
+#      cada puerto manualmente contra la serigrafía/esquemático de la
+#      placa física que va a usar.
+#
+# Sin estos set_location_assignment, Quartus puede compilar (.sof se puede
+# generar con asignación automática de pines en algunas configuraciones),
+# pero el resultado NO es seguro de programar en una DE1-SoC real: los
+# pines podrían quedar asignados a posiciones distintas a las serigrafiadas
+# en la placa, o a pines no tolerantes a 5V donde el periférico externo
+# (p. ej. PS2_CLK/PS2_DAT con pull-ups del teclado) podría no funcionar o,
+# en el peor caso, dañar el puerto.
+# ============================================================================
+
+set_global_assignment -name EDA_TEST_BENCH_ENABLE_STATUS TEST_BENCH_MODE -section_id eda_simulation
+set_global_assignment -name EDA_NATIVELINK_SIMULATION_TEST_BENCH tb_microcontroller_final -section_id eda_simulation
+set_global_assignment -name EDA_TEST_BENCH_NAME tb_microcontroller_final -section_id eda_simulation
+set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id tb_microcontroller_final
+set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME tb_microcontroller_final -section_id tb_microcontroller_final
+set_global_assignment -name EDA_TEST_BENCH_FILE tb/tb_final_integration_package/tb_microcontroller_final.sv -section_id tb_microcontroller_final
+set_location_assignment PIN_AF14 -to CLOCK_50
+set_location_assignment PIN_AA14 -to rst_n
+set_location_assignment PIN_AB21 -to UART_RXD
+set_location_assignment PIN_AC23 -to UART_TXD
+set_location_assignment PIN_A13 -to VGA_R[0]
+set_location_assignment PIN_C13 -to VGA_R[1]
+set_location_assignment PIN_E13 -to VGA_R[2]
+set_location_assignment PIN_B12 -to VGA_R[3]
+set_location_assignment PIN_C12 -to VGA_R[4]
+set_location_assignment PIN_D12 -to VGA_R[5]
+set_location_assignment PIN_E12 -to VGA_R[6]
+set_location_assignment PIN_F13 -to VGA_R[7]
+set_location_assignment PIN_B11 -to VGA_HS
+set_location_assignment PIN_J9 -to VGA_G[0]
+set_location_assignment PIN_J10 -to VGA_G[1]
+set_location_assignment PIN_H12 -to VGA_G[2]
+set_location_assignment PIN_G10 -to VGA_G[3]
+set_location_assignment PIN_G11 -to VGA_G[4]
+set_location_assignment PIN_G12 -to VGA_G[5]
+set_location_assignment PIN_F11 -to VGA_G[6]
+set_location_assignment PIN_E11 -to VGA_G[7]
+set_location_assignment PIN_A11 -to VGA_CLK
+set_location_assignment PIN_F10 -to VGA_BLANK_N
+set_location_assignment PIN_B13 -to VGA_B[0]
+set_location_assignment PIN_G13 -to VGA_B[1]
+set_location_assignment PIN_H13 -to VGA_B[2]
+set_location_assignment PIN_F14 -to VGA_B[3]
+set_location_assignment PIN_H14 -to VGA_B[4]
+set_location_assignment PIN_F15 -to VGA_B[5]
+set_location_assignment PIN_G15 -to VGA_B[6]
+set_location_assignment PIN_J14 -to VGA_B[7]
+set_location_assignment PIN_C10 -to VGA_SYNC_N
+set_location_assignment PIN_D11 -to VGA_VS
+set_location_assignment PIN_AD7 -to PS2_CLK
+set_location_assignment PIN_AE7 -to PS2_DAT
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
