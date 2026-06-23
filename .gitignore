@@ -1,0 +1,83 @@
+# ============================================================================
+# .gitignore — Proyecto Quartus Prime (Intel Cyclone V / DE1-SoC) + ModelSim
+# ----------------------------------------------------------------------------
+# Se versionan SOLO las fuentes y la configuración del proyecto:
+#   *.qpf  *.qsf  *.sdc  *.v  *.sv  *.vhd  *.vhdl  *.mif  *.hex
+#   IP generado mínimo: *.qip  *.ip  *.qsys  (para poder reconstruir el PLL)
+# Se ignoran las salidas y bases de datos que Quartus/ModelSim regeneran.
+# ============================================================================
+
+# ---- Bases de datos de compilación de Quartus ----
+db/
+incremental_db/
+.qsys_edit/
+qdb/
+
+# ---- Salidas de compilación / programación ----
+output_files/
+*.sof
+*.pof
+*.rbf
+*.jic
+*.rpd
+*.jdi
+*.sld
+*.done
+*.pin
+*.smsg
+*.summary
+*.rpt
+*.eqn
+*.qws
+*.cmp.*
+*.qpg
+
+# ---- Netlist de simulación generado por Quartus (post-síntesis, regenerable) ----
+# Carpeta /simulation a nivel raíz (NO afecta al IP, que vive en timer_pll/).
+/simulation/
+*.svo
+*.vo
+*.sft
+*.sdo
+
+# ---- Archivos temporales / handoff de Quartus ----
+hps_isw_handoff/
+*.bak
+*.orig
+*.qarlog
+PLLJ_PLLSPE_INFO.txt
+c5_pin_model_dump.txt
+*.qhf
+
+# ---- IP generado (PLL, etc.) ----
+# Se conserva TODO el IP para que el proyecto compile en un clon limpio.
+# Solo se ignoran artefactos de Platform Designer/Qsys que no hacen falta.
+**/submodules/
+*.bsf
+*.sopcinfo
+
+# Conservar explícitamente el IP del PLL generado (timer_pll): qip, v y carpeta.
+# Necesario para reconstruir en otra máquina sin volver a generar el IP.
+!timer_pll.qip
+!timer_pll.v
+!timer_pll/
+!timer_pll/**
+
+# ---- ModelSim / QuestaSim ----
+work/
+transcript
+vsim.wlf
+*.wlf
+*.vstf
+*.mti
+modelsim.ini
+*.do.bak
+vish_stacktrace.vstf
+
+# ---- Editores / SO ----
+*.swp
+*~
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

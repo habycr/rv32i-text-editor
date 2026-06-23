@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<simPackage>
+ <file path="timer_pll_sim/timer_pll.vo" type="VERILOG" />
+ <topLevel name="timer_pll" />
+ <deviceFamily name="cyclonev" />
+</simPackage>

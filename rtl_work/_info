@@ -1,0 +1,159 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 dC:/intelFPGA_lite/18.0/proyecto-taller-digital
+vcga_palette
+Z1 DXx6 sv_std 3 std 0 22 AD7iAPLo6nTIKk<N0eo=D3
+Z2 !s110 1782186761
+!i10b 1
+!s100 7@UhKXJWi2b7JCfe1TRW=0
+IF8J0:f<;o?Z=mFSAhS:aP1
+Z3 VDg1SIo80bB@j0V0VzS_@n1
+!s105 cga_palette_sv_unit
+S1
+R0
+Z4 w1782099847
+8rtl/peripherals/vga/cga_palette.sv
+Frtl/peripherals/vga/cga_palette.sv
+L0 21
+Z5 OV;L;10.5b;63
+r1
+!s85 0
+31
+Z6 !s108 1782186761.000000
+Z7 !s107 rtl/peripherals/vga/vga_controller.sv|rtl/peripherals/vga/cga_palette.sv|rtl/peripherals/vga/font_rom.sv|rtl/peripherals/vga/text_buffer.sv|rtl/peripherals/vga/vga_timing_gen.sv|
+Z8 !s90 -sv|+define+SIMULATION|rtl/peripherals/vga/vga_timing_gen.sv|rtl/peripherals/vga/text_buffer.sv|rtl/peripherals/vga/font_rom.sv|rtl/peripherals/vga/cga_palette.sv|rtl/peripherals/vga/vga_controller.sv|
+!i113 1
+o-sv
+Z9 !s92 -sv +define+SIMULATION
+Z10 tCvgOpt 0
+vfont_rom
+R1
+R2
+!i10b 1
+!s100 FQ2FD=HkECZ7ON[?;>dB?3
+I[MmRSffDc]BiaiM[NUD`N3
+R3
+!s105 font_rom_sv_unit
+S1
+R0
+R4
+8rtl/peripherals/vga/font_rom.sv
+Frtl/peripherals/vga/font_rom.sv
+L0 25
+R5
+r1
+!s85 0
+31
+R6
+R7
+R8
+!i113 1
+o-sv
+R9
+R10
+vtb_vga_gate
+R1
+R2
+!i10b 1
+!s100 W[=[fLGf[6n8<[Mo0^Egh0
+IS>Ihi8=FX:><4HLQ[4H`82
+R3
+!s105 tb_vga_gate_sv_unit
+S1
+R0
+w1782186170
+8tb/tb_vga_gate.sv
+Ftb/tb_vga_gate.sv
+L0 38
+R5
+r1
+!s85 0
+31
+R6
+!s107 tb/tb_vga_gate.sv|
+!s90 -sv|tb/tb_vga_gate.sv|
+!i113 1
+o-sv
+R10
+vtext_buffer
+R1
+R2
+!i10b 1
+!s100 WnT[aII8H4W1fh0cZk6ce2
+IGJ[?9kE;P:RTB<OidXPLW2
+R3
+!s105 text_buffer_sv_unit
+S1
+R0
+R4
+8rtl/peripherals/vga/text_buffer.sv
+Frtl/peripherals/vga/text_buffer.sv
+L0 1
+R5
+r1
+!s85 0
+31
+R6
+R7
+R8
+!i113 1
+o-sv
+R9
+R10
+vvga_controller
+R1
+R2
+!i10b 1
+!s100 Bl:Ca`B6C0bZ2Y:1Q_D<d0
+INED<Vkk9B;5:_llMl1kzF1
+R3
+!s105 vga_controller_sv_unit
+S1
+R0
+R4
+8rtl/peripherals/vga/vga_controller.sv
+Frtl/peripherals/vga/vga_controller.sv
+L0 1
+R5
+r1
+!s85 0
+31
+R6
+R7
+R8
+!i113 1
+o-sv
+R9
+R10
+vvga_timing_gen
+R1
+R2
+!i10b 1
+!s100 UI5YlNZTe_?<`aPQ>Jj<g3
+IKag4jl?VmIjz^a@NHh7k;2
+R3
+!s105 vga_timing_gen_sv_unit
+S1
+R0
+R4
+8rtl/peripherals/vga/vga_timing_gen.sv
+Frtl/peripherals/vga/vga_timing_gen.sv
+L0 24
+R5
+r1
+!s85 0
+31
+R6
+R7
+R8
+!i113 1
+o-sv
+R9
+R10
