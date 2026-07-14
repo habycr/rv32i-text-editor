@@ -333,7 +333,6 @@ Developed collaboratively by:
 
 **Course:** CE 3201 — Taller de Diseño Digital  
 **Institution:** Instituto Tecnológico de Costa Rica  
-**Term:** First Semester 2026
 
 ## Project Origin
 
