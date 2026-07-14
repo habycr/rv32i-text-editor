@@ -1,225 +1,350 @@
-# **Proyecto Final — CE 3201 Taller de Diseño Digital**
-Instituto Tecnológico de Costa Rica
+# RV32I Microcontroller and VGA Text Editor
 
-Semestre: I Semestre 2026
+> A 32-bit RISC-V microcontroller implemented in SystemVerilog that runs an interactive text editor on an Intel Cyclone V FPGA.
 
-Profesor: Dr.-Ing. Jeferson González Gómez
+This project was developed collaboratively for **CE 3201 — Taller de Diseño Digital** at the **Instituto Tecnológico de Costa Rica** during the first semester of 2026.
 
+The system implements a small computer from the processor up. Its firmware is written in RV32I assembly, text is entered with a PS/2 keyboard, the document is displayed on a VGA monitor, and files can be transferred to or from a PC through UART.
 
+This README provides a practical overview of the system, its operation, firmware, build process, and verification. Detailed hardware design, module interfaces, control logic, instruction tables, and engineering diagrams are documented separately in [`DISENO.md`](DISENO.md).
 
+## Table of Contents
 
+- [What the System Does](#what-the-system-does)
+- [How It Works](#how-it-works)
+- [Main Features](#main-features)
+- [CPU](#cpu)
+- [Memory Map](#memory-map)
+- [Peripherals](#peripherals)
+- [Text Editor](#text-editor)
+- [UART File Transfer](#uart-file-transfer)
+- [Repository Structure](#repository-structure)
+- [Requirements](#requirements)
+- [Build the Firmware](#build-the-firmware)
+- [Synthesize and Program the FPGA](#synthesize-and-program-the-fpga)
+- [Simulation and Verification](#simulation-and-verification)
+- [Known Limitations](#known-limitations)
+- [Development Team](#development-team)
+- [Project Origin](#project-origin)
+- [Project Status](#project-status)
 
-Microcontrolador de 32 bits basado en el conjunto de instrucciones **RISC-V RV32I**,
-descrito en SystemVerilog y sintetizable sobre la tarjeta **DE1-SoC**. Integra una jerarquía de memoria (ROM/RAM) y periféricos mapeados en
-memoria (UART, PS/2, Timer y VGA) para ejecutar una aplicación de **editor de texto
-interactivo** escrita en ensamblador RV32I.
+## What the System Does
 
----
+The project combines hardware and software into one FPGA-based system:
 
-## Integrantes
+- The **RV32I CPU** executes the editor firmware.
+- A **PS/2 keyboard controller** receives keystrokes.
+- A **VGA text controller** displays an 80 × 24 character terminal.
+- A **timer** provides delays and cursor timing.
+- A **UART controller** transfers text between the FPGA and a PC.
+- Program and data memories are implemented with the FPGA's internal **M10K memory blocks**.
 
+The user can type and edit text directly on the FPGA without an operating system or external processor.
 
-| Nombre | Carné |
-|--------|-------|
-| Guerrero Gonzalez Dylan Maximiliano  | 2022016016  |
-| Hernandez Castillo Antony Javier   | 2022321746 |
-| García Izaguirre José   | 2022437991  |
+## How It Works
 
----
+1. After reset, the CPU begins executing instructions from address `0x0000_0000`.
+2. The program ROM supplies the RV32I firmware instruction selected by the program counter.
+3. When the firmware accesses data, the address translator selects RAM or one of the peripherals.
+4. Keyboard events are read from the PS/2 controller and converted into editor actions.
+5. The firmware writes characters and cursor information into the VGA text buffer.
+6. The VGA controller converts that buffer into a 640 × 480 video signal.
+7. Save and load commands exchange the document with a PC through UART.
 
-## Características del sistema
+The firmware uses polling rather than interrupts, which keeps the CPU and peripheral interface simple.
 
-- **CPU:** RISC-V RV32I, uniciclo. Subconjunto: `lw, sw, sll(i), srl(i),
-  sra(i), add, sub, and, or, xor, addi, andi, ori, xori, beq, bne, blt, bge, slt(i),
-  sltu, sltiu, jal, jalr`.
-- **Memoria (bloques M10K internos):**
-  - **ROM de programa, 8 KB** — lectura registrada en **flanco de bajada**: la
-    instrucción queda válida dentro del mismo ciclo, manteniendo el fetch uniciclo.
-  - **RAM de datos, 4 KB** — lectura registrada en **flanco de subida** (M10K limpio,
-    1 ciclo de latencia).
-- **Latencia de `lw` (stall de 1 ciclo):** como la RAM M10K entrega el dato un ciclo
-  después, el CPU inserta **un ciclo de espera en cada `lw`** mediante una FSM
-  (`ST_IDLE → ST_LOAD_WAIT` en `cpu/riscv_cpu.sv`): mantiene el PC (`pc_en=0`) y
-  bloquea la escritura del banco de registros en el primer ciclo, y escribe `rd` en el
-  segundo cuando el dato ya es válido. **`lw` toma 2 ciclos; todo lo demás, 1 ciclo.**
-  Esto permite usar M10K (denso) y que el diseño quepa en la FPGA.
-- **Periféricos (mapeados en memoria):**
-  - **UART** 115200-8N1 (comunicación con PC, protocolo de archivos).
-  - **PS/2** bidireccional (teclado, trama de 11 bits, Set 2, paridad impar).
-  - **Timer** programable de 32 bits (retardos, parpadeo del cursor).
-  - **VGA** 640×480@60 Hz, modo texto 80×24 con font ROM y paleta CGA.
-- **Relojes:** entrada de 50 MHz (`CLOCK_50`). El reloj de píxel de **25 MHz** del VGA
-  se genera con un **PLL** (`timer_pll`, vía `timer_pll_wrapper`).
-- **Reset:** global, **activo en bajo** (`rst_n`), consistente en todos los módulos.
+## Main Features
 
----
+- 32-bit processor based on the **RISC-V RV32I** base integer architecture.
+- Separate instruction and data buses.
+- Program ROM: **8 KB**.
+- Data RAM: **4 KB**.
+- Memory-mapped UART, PS/2, timer, VGA control registers, and VGA text buffer.
+- UART communication at **115200 baud, 8N1**.
+- PS/2 keyboard support using **Scancode Set 2**.
+- VGA output at **640 × 480, 60 Hz**.
+- Text display with **80 columns × 24 rows**.
+- 25 MHz VGA pixel clock generated from the 50 MHz board clock with a PLL.
+- Interactive editor firmware written in RV32I assembly.
+- RTL and module-level verification with self-checking testbenches.
+- Quartus project configured for the **DE1-SoC** board and Cyclone V device `5CSEMA5F31C6`.
 
-## Arquitectura
+## CPU
 
-```
-                 ProgAddress / ProgIn  (ROM lee en negedge -> fetch uniciclo)
-   ┌───────────┐ ◄───────────────────► ┌─────────┐
-   │ riscv_cpu │                        │   rom   │ 8 KB
-   │ (RV32I)   │  + FSM stall de 'lw'   └─────────┘
-   │           │   DataAddress/Out/In/we
-   └─────┬─────┘ ◄──────────┐
-         │                  │
-         ▼                  ▼
-  ┌────────────────────┐   (mux de lectura → DataIn)
-  │ address_translator │
-  └───┬───┬───┬───┬────┘
-  cs_ram │   │   │  cs_vga(ctrl|buffer)
-      ▼  │   │   ▼
-  ┌─────┐│   │ ┌────────────────┐
-  │ ram ││   │ │ vga_controller │──► VGA (R,G,B,HS,VS)  (clk_25 ◄ PLL)
-  └─────┘│   │ └────────────────┘
-   cs_uart cs_ps2 cs_timer
-      ▼     ▼     ▼
-  ┌──────┐┌─────┐┌───────┐
-  │ uart ││ ps2 ││ timer │
-  └──┬───┘└──┬──┘└───────┘
-   UART RX/TX  PS2 CLK/DAT
-```
+The processor uses a 32-bit datapath with:
 
-El `address_translator` decodifica el bus de datos y genera los *chip-selects* y la
-dirección local. El dato de lectura hacia el CPU se construye en `microcontroller.sv`:
-la RAM se prioriza con `cs_ram` y los periféricos (que devuelven 0 cuando no están
-seleccionados) se combinan con OR.
+- program counter;
+- 32 × 32-bit register file;
+- combinational ALU;
+- immediate generator;
+- combinational control unit;
+- next-PC and result-selection multiplexers.
 
----
+### Implemented instructions
 
-## Mapa de memoria
-
-| Región            | Rango                       | Tamaño |
-|-------------------|-----------------------------|--------|
-| ROM (programa)    | `0x0000_0000 – 0x0000_1FFF` | 8 KB   |
-| RAM (datos)       | `0x0000_2000 – 0x0000_2FFF` | 4 KB   |
-| Periféricos       | `0x0001_0000 – 0x0001_FFFF` | —      |
-
-| Periférico        | Dirección base   |
-|-------------------|------------------|
-| UART (ctrl/tx/rx) | `0x0001_0040`    |
-| PS/2 (ctrl/rx/tx) | `0x0001_0050`    |
-| Timer (ctrl/data) | `0x0001_0060`    |
-| VGA control/cursor| `0x0001_0120`    |
-| Buffer de texto   | `0x0001_1000 – 0x0001_2DFF` |
-
----
-
-## Estructura de directorios
-
-```
-proyecto-taller-digital/
-├── microcontroller.sv          # TOP del sistema (SoC completo)
-├── microcontroller.qpf/.qsf    # Proyecto y asignaciones de Quartus
-├── rom.hex                     # Firmware del editor (cargado en la ROM)
-├── .gitignore  /  README.md
-├── cpu/                        # CPU RV32I: riscv_cpu (FSM stall lw), datapath,
-│                               #   control_unit, alu, register_file, program_counter
-│                               #   (con pc_en), sign_extend
-├── Address Translator/         # Decodificación del bus de datos (splitter, decoders, mux)
-├── rtl/peripherals/
-│   ├── rom/   ram/             # Memorias M10K (ROM negedge / RAM posedge)
-│   ├── uart/                   # baud_gen, uart_rx, uart_tx, uart_peripheral
-│   ├── ps2/                    # sync, rx_frame, rx_fsm, parity_chk, tx, peripheral
-│   ├── timer/                  # prescaler, counter, peripheral, pll_wrapper
-│   └── vga/                    # timing_gen, text_buffer, font_rom, cga_palette,
-│                               #   vga_clk_gen, vga_controller
-├── tb/                         # Testbenches (ver "Verificación")
-│   ├── tb_microcontroller_final.sv / _full_compact.sv   # sistema completo (RTL)
-│   ├── tb_uart_peripheral.sv / tb_ps2_peripheral.sv     # periféricos (RTL)
-│   ├── tb_cpu_gate.sv  (.do)                            # gate-level CPU
-│   ├── tb_vga_gate.sv  (.do)                            # gate-level VGA
-│   ├── sim_validacion_stall/                            # validación del stall de lw
-│   │     tb_lw_stall.sv, tb_lw_stall2.sv, caso*.hex
-│   └── timer/                                           # tb_timer_peripheral.sv
-└── timer_pll/                  # IP del PLL generado por Quartus (25 MHz)
+```text
+lw, sw,
+sll, slli, srl, srli, sra, srai,
+add, sub, and, or, xor,
+addi, andi, ori, xori,
+beq, bne, blt, bge,
+slt, slti, sltu, sltiu,
+jal, jalr
 ```
 
----
+Most instructions complete in one clock cycle.
 
-## Requisitos
+`lw` requires two cycles because the M10K data RAM has synchronous read latency. A two-state control sequence temporarily holds the program counter and delays register write-back until the RAM output is valid:
 
-- **Intel Quartus Prime Lite 18.0** (síntesis, dispositivo `5CSEMA5F31C6`).
-- **ModelSim - Intel FPGA Edition** (simulación SystemVerilog).
-- Ensamblador RV32I / Ripes (para generar `rom.hex` con el firmware del editor).
-- Python (para realizar lectura del puerto USB y poder recibir y enviar archivos por UART)
-
----
-
-## Síntesis (Quartus)
-
-1. Abrir `microcontroller.qpf` en Quartus Prime Lite.
-2. Verificar que el TOP y el IP están en el `.qsf`:
-   ```tcl
-   set_global_assignment -name SYSTEMVERILOG_FILE microcontroller.sv
-   set_global_assignment -name QIP_FILE timer_pll.qip
-   ```
-3. **Pines de la DE1-SoC: ya asignados** en el `.qsf` (3.3-V LVTTL):
-   `CLOCK_50` (PIN_AF14), `rst_n` (KEY[0], PIN_AA14), `PS2_CLK/PS2_DAT`,
-   `UART_RXD/UART_TXD`, y el bus `VGA_R/G/B[7:0]` + `VGA_HS/VS/CLK/BLANK_N/SYNC_N`.
-4. Firmware: el top usa `parameter ROM_INIT_FILE = "rom.hex"`; colocar `rom.hex` en la
-   carpeta del proyecto.
-5. **Processing → Start Compilation** y programar el `.sof` con el **Programmer**.
----
-
-## Verificación
-
-Estrategia por capas (todas autoverificables con reportes PASS/FAIL):
-
-| Nivel | Testbench | Qué cubre |
-|-------|-----------|-----------|
-| RTL — sistema   | `tb/tb_microcontroller_final.sv`, `tb_microcontroller_full_compact.sv` | CPU + memorias + traductor + periféricos integrados |
-| RTL — periférico| `tb/tb_uart_peripheral.sv`, `tb/tb_ps2_peripheral.sv`, `tb/timer/tb_timer_peripheral.sv` | protocolo UART / PS/2 / Timer |
-| RTL — stall `lw`| `tb/sim_validacion_stall/tb_lw_stall*.sv` (+ `caso*.hex`) | latencia de `lw` con RAM M10K (pila/subrutinas) |
-| Gate-level (post-síntesis) | `tb/tb_cpu_gate.sv` (`.do`), `tb/tb_vga_gate.sv` (`.do`) | CPU y VGA sobre el netlist sintetizado |
-
-**RTL (módulo, ejemplo):**
-```sh
-vlib work
-vlog -sv rtl/peripherals/timer/timer_prescaler.sv rtl/peripherals/timer/timer_counter.sv \
-        rtl/peripherals/timer/timer_peripheral.sv tb/timer/tb_timer_peripheral.sv
-vsim -c -do "run -all; quit -f" tb_timer_peripheral
+```text
+ST_IDLE → ST_LOAD_WAIT → ST_IDLE
 ```
 
-**RTL (sistema):** compilar todas las fuentes con `+define+SIMULATION` (el
-`timer_pll_wrapper` usa un modelo *bypass* del PLL) y correr `tb_microcontroller_final`.
-En modo bypass el reloj de píxel queda a 50 MHz en simulación; la frecuencia real de
-25 MHz solo aplica en hardware con el IP generado.
+This keeps the rest of the datapath simple while allowing the data memory to remain implemented with dedicated FPGA memory blocks.
 
-**Gate-level (post-síntesis):** se usan testbenches **por módulo** (`tb_cpu_gate`,
-`tb_vga_gate`) con sus scripts `.do`. En **ModelSim Starter Edition (gratuita)** el
-sistema completo no se puede simular a nivel de compuertas porque el **PLL y celdas de
-reloj de Cyclone V están encriptados** y el netlist completo excede la capacidad de la
-edición gratuita; por eso la verificación gate-level se hace por módulo (CPU, VGA), que
-no contienen IP encriptado. Con **Questa/ModelSim completo** sí corre el netlist
-completo (con `-L cyclonev_ver -L altera_ver -L altera_lnsim_ver`).
+## Memory Map
 
----
+### Main regions
 
-## Aplicación: editor de texto
+| Region | Address range | Size | Purpose |
+|---|---:|---:|---|
+| Program ROM | `0x0000_0000` – `0x0000_1FFF` | 8 KB | RV32I editor firmware |
+| Data RAM | `0x0000_2000` – `0x0000_2FFF` | 4 KB | Stack, variables, and temporary data |
+| Peripherals | `0x0001_0000` – `0x0001_FFFF` | 64 KB window | Control, status, and data registers |
 
-Editor interactivo estilo *vim*, con dos modos:
+### Peripheral addresses
 
-- **Modo inserción** (por defecto): caracteres imprimibles se insertan en el cursor;
-  `Enter`, `Backspace`, flechas y `Esc` (→ modo comando).
-- **Modo comando:** `i` (insertar), `:w` (guardar a PC vía UART), `:r` (cargar desde
-  PC), `:q` (limpiar buffer), flechas (mover cursor).
+| Peripheral | Address |
+|---|---:|
+| UART control/status | `0x0001_0040` |
+| UART TX data | `0x0001_0044` |
+| UART RX data | `0x0001_0048` |
+| PS/2 control/status | `0x0001_0050` |
+| PS/2 RX data | `0x0001_0054` |
+| PS/2 TX data | `0x0001_0058` |
+| Timer control/status | `0x0001_0060` |
+| Timer data | `0x0001_0064` |
+| VGA control/cursor | `0x0001_0120` |
+| VGA text buffer | `0x0001_1000` – `0x0001_2DFF` |
 
-**Protocolo de archivos UART (115200-8N1):** Guardar = `SOH(0x01)` + contenido +
-`EOT(0x04)`; Cargar = `ENQ(0x05)` y la PC responde con `SOH` + contenido + `EOT`.
+## Peripherals
 
----
+### UART
 
-## Estado de verificación
+The UART peripheral provides transmit, receive, control, and status registers. It operates at 115200 baud with 8 data bits, no parity, and one stop bit.
 
-- [x] CPU, memorias, traductor y periféricos integrados en `microcontroller.sv`.
-- [x] RAM/ROM en M10K; `lw` con stall de 1 ciclo (FSM `pc_en`).
-- [x] El sistema **elabora sin errores** en simulación (RTL).
-- [x] **Síntesis + Fitter sin errores** en Quartus (el diseño cabe en la FPGA).
-- [x] Reloj de píxel VGA de 25 MHz mediante PLL (`timer_pll`).
-- [x] Suite de testbenches: RTL (sistema/periféricos), validación del stall de `lw`,
-      y gate-level por módulo (CPU, VGA).
-- [x] Firmware `rom.hex` cargado en la ROM.
-- [x] **Asignación de pines** de la DE1-SoC en el `.qsf` (CLOCK_50, rst_n=KEY[0], PS/2, UART, VGA).
-- [ ] **Demostración en hardware** (teclado PS/2 físico + monitor VGA).
+### PS/2
+
+The PS/2 peripheral synchronizes the external clock and data signals, receives 11-bit frames, checks odd parity, and handles Set 2 make, break, and extended-key prefixes.
+
+### Timer
+
+The timer contains a prescaler and 32-bit counter. The firmware uses it for timing operations such as cursor behavior.
+
+### VGA
+
+The VGA subsystem contains:
+
+- timing generator;
+- dual-clock text buffer;
+- font ROM;
+- CGA-style color palette;
+- cursor and control registers;
+- pixel-clock generation.
+
+Each screen cell stores the information required to render one text character.
+
+## Text Editor
+
+The firmware provides two operating modes inspired by `vim`.
+
+### Insert mode
+
+- Type printable characters.
+- Move with the arrow keys.
+- Use `Enter` for a new line.
+- Use `Backspace` to remove the previous character.
+- Press `Esc` to enter command mode.
+
+### Command mode
+
+| Command | Action |
+|---|---|
+| `i` | Return to insert mode |
+| `:w` | Send the current document to the PC |
+| `:r` | Request and load a document from the PC |
+| `:q` | Clear the text buffer |
+| Arrow keys | Move the cursor |
+
+## UART File Transfer
+
+The editor uses a small byte-oriented protocol.
+
+### Save: FPGA to PC
+
+```text
+SOH (0x01) → file contents → EOT (0x04)
+```
+
+### Load: PC to FPGA
+
+```text
+FPGA sends ENQ (0x05)
+PC responds with SOH (0x01) → file contents → EOT (0x04)
+```
+
+A serial terminal or a Python program can be used on the PC side.
+
+## Repository Structure
+
+```text
+.
+├── microcontroller.sv          # Complete system top level
+├── microcontroller.qpf         # Quartus project
+├── microcontroller.qsf         # Device, source, and pin assignments
+├── microcontroller.sdc         # Timing constraints
+├── rom.hex                     # Firmware image loaded by the program ROM
+├── cpu/                        # RV32I CPU and datapath
+├── Address Translator/         # Address decoding and local-address generation
+├── rtl/
+│   ├── firmware/               # Assembly editor and ROM build script
+│   └── peripherals/
+│       ├── rom/
+│       ├── ram/
+│       ├── uart/
+│       ├── ps2/
+│       ├── timer/
+│       └── vga/
+├── tb/                         # RTL, integration, stall, and peripheral testbenches
+├── timer_pll/                  # Quartus PLL IP for the 25 MHz VGA clock
+├── DISENO.md                   # Detailed engineering design document
+├── PATCH_NOTES.md              # M10K RAM and lw-stall design notes
+└── README.md
+```
+
+Generated Quartus and ModelSim build directories should not be committed.
+
+## Requirements
+
+### Software
+
+- Intel Quartus Prime Lite 18.0.
+- ModelSim — Intel FPGA Edition or a compatible QuestaSim installation.
+- Python 3.6 or newer.
+- A RISC-V GNU embedded toolchain providing:
+  - `riscv32-unknown-elf-*`, or
+  - `riscv64-unknown-elf-*`.
+
+### Hardware
+
+- DE1-SoC development board.
+- PS/2 keyboard.
+- VGA monitor and cable.
+- USB-to-UART adapter or compatible serial connection for file transfer.
+
+## Build the Firmware
+
+From the repository root:
+
+```bash
+cd rtl/firmware
+python build_rom.py editor.s
+```
+
+The script:
+
+1. assembles the source for `rv32i`;
+2. links it at address `0x0000_0000`;
+3. creates a disassembly file;
+4. checks for unsupported instructions;
+5. generates a 2048-word `rom.hex` image padded with RV32I NOP instructions.
+
+Copy the resulting ROM image to the repository root.
+
+### Linux or macOS
+
+```bash
+cp rom.hex ../../rom.hex
+```
+
+### Windows PowerShell
+
+```powershell
+Copy-Item .\rom.hex ..\..\rom.hex -Force
+```
+
+## Synthesize and Program the FPGA
+
+1. Open `microcontroller.qpf` in Quartus Prime Lite 18.0.
+2. Confirm that `microcontroller.sv` is configured as the top-level entity.
+3. Confirm that `rom.hex`, the PLL IP, and all SystemVerilog sources are available.
+4. Run **Processing → Start Compilation**.
+5. Open **Tools → Programmer**.
+6. Select the generated `.sof` file.
+7. Program the DE1-SoC.
+
+The `.qsf` contains the assignments for the board clock, reset, PS/2, UART, and VGA ports.
+
+## Simulation and Verification
+
+Verification is organized in layers.
+
+| Level | Main files | Purpose |
+|---|---|---|
+| Complete RTL system | `tb/tb_microcontroller_final.sv`, `tb/tb_microcontroller_full_compact.sv` | CPU, memories, bus, and peripherals together |
+| UART | `tb/tb_uart_peripheral.sv` | Transmit and receive behavior |
+| PS/2 | `tb/tb_ps2_peripheral.sv` | Frame reception, prefixes, and keyboard data |
+| Timer | `tb/timer/tb_timer_peripheral.sv` | Prescaler, counting, and register interface |
+| `lw` stall | `tb/sim_validacion_stall/` | Synchronous RAM latency and dependent instructions |
+| Gate level | `tb/tb_cpu_gate.sv`, `tb/tb_vga_gate.sv` | Post-synthesis CPU and VGA checks |
+
+For RTL simulation of the complete system, compile with:
+
+```text
++define+SIMULATION
+```
+
+This selects the simulation model in `timer_pll_wrapper`. The real 25 MHz pixel clock is generated by the Quartus PLL in hardware.
+
+The full design document contains the module interfaces and verification strategy:
+
+- [`DISENO.md`](DISENO.md)
+- [`PATCH_NOTES.md`](PATCH_NOTES.md)
+- [`tb/sim_validacion_stall/README.md`](tb/sim_validacion_stall/README.md)
+
+## Known Limitations
+
+- The implemented CPU supports only the RV32I instructions required by the editor.
+- Byte and halfword load/store instructions are not implemented.
+- The CPU does not implement interrupts; firmware communicates with peripherals through polling.
+- `lw` takes two cycles because of synchronous M10K RAM latency.
+- The editor is limited to the fixed VGA text-buffer capacity.
+- UART transfer uses a simple framing protocol without error correction or retransmission.
+- A complete gate-level simulation may require a full ModelSim or QuestaSim installation because Cyclone V PLL models can be encrypted or restricted in the Starter Edition.
+- The final physical demonstration with a PS/2 keyboard and VGA monitor remains pending.
+
+## Development Team
+
+Developed collaboratively by:
+
+- José García Izaguirre
+- Dylan Maximiliano Guerrero González
+- Antony Javier Hernández Castillo
+
+**Course:** CE 3201 — Taller de Diseño Digital  
+**Institution:** Instituto Tecnológico de Costa Rica  
+**Term:** First Semester 2026
+
+## Project Origin
+
+This repository is a public portfolio copy of a collaborative academic project originally developed in a private GitLab repository.
+
+The original commit history and authorship were preserved when the project was moved to GitHub.
+
+## Project Status
+
+**Completed academic FPGA implementation.**
+
+The CPU, memories, address translator, peripherals, firmware image, timing constraints, and FPGA pin assignments are integrated. RTL simulation and Quartus synthesis/Fitter completed successfully.
+
+The remaining validation step is the complete physical demonstration using the DE1-SoC board, PS/2 keyboard, VGA monitor, and UART connection.
