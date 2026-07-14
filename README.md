@@ -309,8 +309,7 @@ This selects the simulation model in `timer_pll_wrapper`. The real 25 MHz pixel 
 The full design document contains the module interfaces and verification strategy:
 
 - [`DISENO.md`](DISENO.md)
-- [`PATCH_NOTES.md`](PATCH_NOTES.md)
-- [`tb/sim_validacion_stall/README.md`](tb/sim_validacion_stall/README.md)
+
 
 ## Known Limitations
 
